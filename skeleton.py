@@ -8,10 +8,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 data = [
     [
-        [["sos", "sos", "sos"], ["tx0", "stx0", "lx0"]],
-        [["sos1", "sos1", "sos1"], ["ty0", "sty0", "ly0"]],
+        [["sos", "sos", "sos"], ["tx0", "stx0", "lx0"]], # lag      #--|
+                                                                    #  | - mini batch
+        [["sos1", "sos1", "sos1"], ["ty0", "sty0", "ly0"]],         #--| 
     ],
-    [
+    [                                                    # ex seperate cr
         [["tx0", "stx0", "lx0"], ["tx1", "stx1", "lx1"]],
         [["ty0", "sty0", "ly0"], ["ty1", "sty1", "ly1"]],
     ],
@@ -27,6 +28,7 @@ data = [
 
 
 def generate_token_dicts(data, ind_tok_dim):
+    """generate independent token dicts for data along ind_tok_dim"""
     tokenizers = []
     data_array = np.array(data)
     for act_cat_field in data_array.swapaxes(ind_tok_dim, 0).swapaxes(1, ind_tok_dim):
@@ -51,17 +53,28 @@ for i in range(data_array.shape[-1]):
 
 intv = np.vectorize(int)
 data_array = intv(data_array)
+# make 4d tensor of (cr x batch x activities lookback window(lag/bptt) x activity categories)
 
-# make 5d tensor of (sequential info x batch x activities lookback window x activity categories x activity category vector)
-te = nn.Embedding(n_tokens, 100).to(device)
-e = nn.Embedding(n_tokens, 100).to(device)
-ste = nn.Embedding(n_tokens, 100).to(device)
-le = nn.Embedding(n_tokens, 100).to(device)
-tfmr_enc_l = nn.TransformerDecoderLayer(300, 2).to(device)
-tfmr_enc = nn.TransformerDecoder(tfmr_enc_l, 2).to(device)
-tc = nn.Linear(300, len(t_td)).to(device)
-stc = nn.Linear(300, len(st_td)).to(device)
-ltc = nn.Linear(300, len(l_td)).to(device)
+
+emb_dim = 100
+num_seqences_into_tran = 300
+num_attn_heads = 2
+num_dec_layers = 2
+# dims (mini_batch(batch_sz) x bptt x act_cats)
+bptt = 2  # num lagged activities
+batch_sz = 2  # num crs in mini batch
+
+te = nn.Embedding(n_tokens, emb_dim).to(device)
+e = nn.Embedding(n_tokens, emb_dim).to(device)
+ste = nn.Embedding(n_tokens, emb_dim).to(device)
+le = nn.Embedding(n_tokens, emb_dim).to(device)
+tfmr_enc_l = nn.TransformerDecoderLayer(num_seqences_into_tran, num_attn_heads).to(
+    device
+)
+tfmr_enc = nn.TransformerDecoder(tfmr_enc_l, num_dec_layers).to(device)
+tc = nn.Linear(num_seqences_into_tran, len(t_td)).to(device)
+stc = nn.Linear(num_seqences_into_tran, len(st_td)).to(device)
+ltc = nn.Linear(num_seqences_into_tran, len(l_td)).to(device)
 crit = nn.CrossEntropyLoss().to(device)
 optimizer = torch.optim.AdamW(
     [
@@ -83,21 +96,22 @@ tfmr_enc.train().to(device)
 data_ten = torch.tensor(data_array).long().to(device)
 
 i = 0
-for i in range(50):
+epochs = 50
+for i in range(epochs):
 
     print(i)
     tgt_loss = 0.0
     optimizer.zero_grad()
 
     # k = 0
-    for k in range(3):
-        src = data_ten[k, :, :, :]
+    for k in range(len(data_ten) - 1):
+        src = data_ten[k, :, :, :] #
         tgt = data_ten[k + 1, :, :, :]
 
         embedded_src = e(src)
 
         # concat activity category vectors together in last dimension
-        dt_src = torch.reshape(embedded_src, (2, 2, 300))
+        dt_src = torch.reshape(embedded_src, (bptt, batch_sz, src.shape[-1] * emb_dim))
         mask = (torch.triu(torch.ones(2, 2)) == 1).transpose(0, 1).to(device)
         mask = (
             mask.float()
