@@ -5,14 +5,14 @@ import numpy as np
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
+# data is 4 batches of bptt 2, minibatch size 2,  3 act categories
 data = [
     [
-        [["sos", "sos", "sos"], ["tx0", "stx0", "lx0"]], # lag      #--|
-                                                                    #  | - mini batch
-        [["sos1", "sos1", "sos1"], ["ty0", "sty0", "ly0"]],         #--| 
+        [["sos", "sos", "sos"], ["tx0", "stx0", "lx0"]],  # lag      #--|
+        #  | - mini batch
+        [["sos1", "sos1", "sos1"], ["ty0", "sty0", "ly0"]],  # --|
     ],
-    [                                                    # ex seperate cr
+    [  # ex seperate cr
         [["tx0", "stx0", "lx0"], ["tx1", "stx1", "lx1"]],
         [["ty0", "sty0", "ly0"], ["ty1", "sty1", "ly1"]],
     ],
@@ -105,7 +105,7 @@ for i in range(epochs):
 
     # k = 0
     for k in range(len(data_ten) - 1):
-        src = data_ten[k, :, :, :] #
+        src = data_ten[k, :, :, :]  #
         tgt = data_ten[k + 1, :, :, :]
 
         embedded_src = e(src)
