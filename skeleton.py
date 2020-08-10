@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -52,7 +53,6 @@ data_array = intv(data_array)
 
 # make 5d tensor of (sequential info x batch x activities lookback window x activity categories x activity category vector)
 te = nn.Embedding(8, 100).to(device)
-e = nn.Embedding(8, 100).to(device)
 ste = nn.Embedding(8, 100).to(device)
 le = nn.Embedding(8, 100).to(device)
 tfmr = nn.Transformer(300, 2, 2, 2).to(device)
@@ -69,7 +69,7 @@ optimizer = torch.optim.AdamW(
         {"params": te.parameters()},
         {"params": ste.parameters()},
         {"params": le.parameters()},
-        {"params": e.parameters()},
+        # {"params": e.parameters()},
     ]
 )
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma=0.95)
@@ -79,13 +79,13 @@ tfmr.train().to(device)
 
 data_ten = torch.tensor(data_array).long().to(device)
 
-for i in range(50):
+for i in range(100):
 
     print(i)
     tgt_loss = 0.0
     optimizer.zero_grad()
 
-    # k = 0
+    # k = 1
     for k in range(3):
         src = data_ten[k, :, :, :]
         tgt = data_ten[k + 1, :, :, :]
@@ -114,38 +114,47 @@ for i in range(50):
         stclsprb = stclsprb.reshape(4, 8)
         lclsprb = lclsprb.reshape(4, 8)
 
-        tgt_loss = crit(tclsprb, tgt[..., 0].flatten())
+        tgt_loss += crit(tclsprb, tgt[..., 0].flatten())
         tgt_loss += crit(stclsprb, tgt[..., 1].flatten())
         tgt_loss += crit(lclsprb, tgt[..., 2].flatten())
 
         tgt_loss.backward()
         optimizer.step()
+        print(tgt_loss)
+
+        tgt_loss = 0.0
+
+    if i % 10 == 0:
+        print(tclsprb.argmax(dim=-1), stclsprb.argmax(dim=-1), lclsprb.argmax(dim=-1))
+
+tfmr.eval().to(device)
+te.eval().to(device)
+ste.eval().to(device)
+le.eval().to(device)
+e.eval().to(device)
+ltc.eval().to(device)
+stc.eval().to(device)
+tc.eval().to(device)
+
+with torch.no_grad():
+    k = 1
+    src = data_ten[0, :, :, :]
+    tgt = data_ten[1, :, :, :]
+    embedded_src = e(src)
+    dt_src = torch.reshape(embedded_src, (2, 2, 300))
+    tfmr_out = tfmr.decoder(tgt=dt_src, memory=torch.zeros(2, 2, 300).to(device))
+
+    tclsprb = tc.forward(tfmr_out)
+    stclsprb = stc.forward(tfmr_out)
+    lclsprb = ltc.forward(tfmr_out)
+
+    tclsprb = tclsprb.reshape(4, 8)
+    stclsprb = stclsprb.reshape(4, 8)
+    lclsprb = lclsprb.reshape(4, 8)
+
+    tgt_loss = crit(tclsprb, tgt[..., 0].flatten())
+    tgt_loss += crit(stclsprb, tgt[..., 1].flatten())
+    tgt_loss += crit(lclsprb, tgt[..., 2].flatten())
 
     print(tgt_loss)
-
     print(tclsprb.argmax(dim=-1), stclsprb.argmax(dim=-1), lclsprb.argmax(dim=-1))
-
-tfmr.eval()
-k = 1
-src = data_ten[0, :, :, :]
-tgt = data_ten[1, :, :, :]
-embedded_src = e(src)
-dt_src = torch.reshape(embedded_src, (2, 2, 300))
-tfmr_out = tfmr.decoder(tgt=dt_src, memory=torch.zeros(2, 2, 300).to(device))
-
-tclsprb = tc.forward(tfmr_out)
-stclsprb = stc.forward(tfmr_out)
-lclsprb = ltc.forward(tfmr_out)
-
-tclsprb = tclsprb.reshape(4, 8)
-stclsprb = stclsprb.reshape(4, 8)
-lclsprb = lclsprb.reshape(4, 8)
-
-tgt_loss = crit(tclsprb, tgt[..., 0].flatten())
-tgt_loss += crit(stclsprb, tgt[..., 1].flatten())
-tgt_loss += crit(lclsprb, tgt[..., 2].flatten())
-
-print(tgt_loss)
-
-
-print(tclsprb.argmax(dim=-1), stclsprb.argmax(dim=-1), lclsprb.argmax(dim=-1))
