@@ -1,5 +1,9 @@
 """ toy example of next sequence prediction at the intra-sequential element level using 
-transfomer with sequence level static data"""
+transfomer with sequence level static data
+
+ie. ['sos','sos'] -> ['t1', 's1'] where t and s are from different categorical sets, 
+but where value of  s1 is dependent on t1
+"""
 
 import torch
 import torch.nn as nn
@@ -11,7 +15,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # data is 4 batches of bptt 2, minibatch size 2,  3 act categories
 data = [
     [
-        [["sos", "sos", "sos"], ["tx0", "stx0", "lx0"]],  # lag       --|
+        [["sos", "sos", "sos"], ["tx0", "stx0", "lx0"]],  #           --|
         #                                                               | - mini batch
         [["sos", "sos", "sos"], ["ty0", "sty0", "ly0"]],  #           --|
     ],
@@ -48,6 +52,7 @@ def generate_token_dicts(data, ind_tok_dim):
     return tokenizers
 
 
+# generate independent token dicts for categorical field labels
 td = generate_token_dicts(data, 3)
 t_td, st_td, l_td = td
 n_tokens = len(t_td)
@@ -77,10 +82,12 @@ num_dec_layers = 2
 bptt = 2  # num lagged activities
 batch_sz = 2  # num crs in mini batch
 
-te = nn.Embedding(n_tokens, emb_dim).to(device)
 e = nn.Embedding(n_tokens, emb_dim).to(device)
+## TODO: validate seperate embedding per act category works better
+te = nn.Embedding(n_tokens, emb_dim).to(device)
 ste = nn.Embedding(n_tokens, emb_dim).to(device)
 le = nn.Embedding(n_tokens, emb_dim).to(device)
+##
 se = nn.Embedding(7, 300).to(device)
 tfmr_dec_l = nn.TransformerDecoderLayer(num_seqences_into_tran, num_attn_heads).to(
     device
@@ -103,7 +110,6 @@ optimizer = torch.optim.AdamW(
         {"params": le.parameters()},
         {"params": e.parameters()},
         {"params": tfmr_enc.parameters()},
-        # {"params": se.parameters()},
     ]
 )
 
@@ -117,6 +123,7 @@ st_data_ten = torch.tensor(static_data).long().to(device)
 
 i = 0
 epochs = 30  # 30 seems enough to memorize this toy set
+# TODO: static data does not seem to make a difference in model differentiating tx0/ty0, and about 40 epochs loss plataeus
 for i in range(epochs):
 
     print(i)
