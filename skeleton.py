@@ -57,8 +57,8 @@ te = nn.Embedding(n_tokens, 100).to(device)
 e = nn.Embedding(n_tokens, 100).to(device)
 ste = nn.Embedding(n_tokens, 100).to(device)
 le = nn.Embedding(n_tokens, 100).to(device)
-tfmr_enc_l = nn.TransformerEncoderLayer(300, 2).to(device)
-tfmr_enc = nn.TransformerEncoder(tfmr_enc_l, 2).to(device)
+tfmr_enc_l = nn.TransformerDecoderLayer(300, 2).to(device)
+tfmr_enc = nn.TransformerDecoder(tfmr_enc_l, 2).to(device)
 tc = nn.Linear(300, len(t_td)).to(device)
 stc = nn.Linear(300, len(st_td)).to(device)
 ltc = nn.Linear(300, len(l_td)).to(device)
@@ -83,7 +83,7 @@ tfmr_enc.train().to(device)
 data_ten = torch.tensor(data_array).long().to(device)
 
 i = 0
-for i in range(1000):
+for i in range(50):
 
     print(i)
     tgt_loss = 0.0
@@ -103,8 +103,10 @@ for i in range(1000):
             mask.float()
             .masked_fill(mask == 0, float("-inf"))
             .masked_fill(mask == 1, float(0.0))
+        ).to(device)
+        tfmr_out = tfmr_enc.forward(
+            dt_src, memory=torch.zeros(dt_src.shape).to(device), tgt_mask=mask
         )
-        tfmr_out = tfmr_enc.forward(dt_src, mask=mask)
 
         tclsprb = tc.forward(tfmr_out)
         stclsprb = stc.forward(tfmr_out)
@@ -142,7 +144,7 @@ with torch.no_grad():
     tgt = data_ten[1, :, :, :]
     embedded_src = e(src)
     dt_src = torch.reshape(embedded_src, (2, 2, 300))
-    tfmr_out = tfmr_enc(dt_src)
+    tfmr_out = tfmr_enc(dt_src, memory=torch.zeros(dt_src.shape).to(device))
 
     tclsprb = tc.forward(tfmr_out)
     stclsprb = stc.forward(tfmr_out)
