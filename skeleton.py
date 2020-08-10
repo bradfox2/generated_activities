@@ -1,3 +1,6 @@
+""" toy example of next sequence prediction at the intra-sequential element level using 
+transfomer with sequence level static data"""
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -26,6 +29,8 @@ data = [
     ],
 ]
 
+# toy static data, unique token sequences
+# this should help model seperate the sos -> tx0/ty0 sequence prediction
 static_data = [[1, 2, 3], [4, 5, 6]]
 
 
@@ -47,12 +52,14 @@ td = generate_token_dicts(data, 3)
 t_td, st_td, l_td = td
 n_tokens = len(t_td)
 
+# numericalize arrays based on token dicts
 tok_data_array = np.array(data)
 for i in range(tok_data_array.shape[-1]):
     token_dict = td[i]
     for field in np.nditer(tok_data_array[..., i], op_flags=["readwrite"]):
         field[...] = str(field)
 
+# arrange array, but with text tokens for reference use
 data_array = np.array(data)
 for i in range(data_array.shape[-1]):
     token_dict = td[i]
@@ -61,7 +68,6 @@ for i in range(data_array.shape[-1]):
 
 intv = np.vectorize(int)
 data_array = intv(data_array)
-# make 4d tensor of (bpttbatch x minibatch x activities lookback window(seq lengths) x activity categories)
 
 emb_dim = 100
 num_seqences_into_tran = 300
@@ -103,16 +109,14 @@ optimizer = torch.optim.AdamW(
 
 tfmr_dec.train().to(device)
 
+# make 4d tensor of (bpttbatch x minibatch x activities lookback window(seq lengths) x activity categories)
 data_ten = torch.tensor(data_array).long().to(device)
+
+# simple static data tensor
 st_data_ten = torch.tensor(static_data).long().to(device)
 
-memory = torch.zeros((2, 2, 300)).to(device)
-memory[0, :, :] = 0.8
-memory[1, :, :] = 0.2
-ml = nn.Linear(300, 300).to(device)
-
 i = 0
-epochs = 1000
+epochs = 30  # 30 seems enough to memorize this toy set
 for i in range(epochs):
 
     print(i)
@@ -121,7 +125,8 @@ for i in range(epochs):
 
     # k = 0
     for k in range(len(data_ten) - 1):
-        src = data_ten[k, :, :, :]  #
+        # iterate batches of bptt sequences, minibatches processed in parallel on dim 1
+        src = data_ten[k, :, :, :]
         tgt = data_ten[k + 1, :, :, :]
 
         em_st_src = se(st_data_ten).mean(dim=1).expand((2, 2, 300))
@@ -129,6 +134,8 @@ for i in range(epochs):
 
         # concat activity category vectors together in last dimension
         dt_src = torch.reshape(embedded_src, (bptt, batch_sz, src.shape[-1] * emb_dim))
+
+        # mask any future sequences so attention will not use them
         mask = (torch.triu(torch.ones(2, 2)) == 1).transpose(0, 1).to(device)
         mask = (
             mask.float()
@@ -136,9 +143,13 @@ for i in range(epochs):
             .masked_fill(mask == 1, float(0.0))
         ).to(device)
 
+        # process static data
         tfmr_enc_out = tfmr_enc.forward(em_st_src)
+
+        # forward pass main transfomer
         tfmr_out = tfmr_dec.forward(dt_src, memory=tfmr_enc_out, tgt_mask=mask)
 
+        # get class probs of activity elements
         tclsprb = tc.forward(tfmr_out)
         stclsprb = stc.forward(tfmr_out)
         lclsprb = ltc.forward(tfmr_out)
@@ -160,6 +171,7 @@ for i in range(epochs):
     if i % 10 == 0:
         print(tclsprb.argmax(dim=-1), stclsprb.argmax(dim=-1), lclsprb.argmax(dim=-1))
 
+# turn on eval
 tfmr_dec.eval().to(device)
 tfmr_enc.eval().to(device)
 te.eval().to(device)
@@ -170,6 +182,7 @@ ltc.eval().to(device)
 stc.eval().to(device)
 tc.eval().to(device)
 
+# "validate" we have memorized data acceptably
 with torch.no_grad():
     k = 0
     src = data_ten[0, :, :, :]
