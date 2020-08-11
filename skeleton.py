@@ -216,3 +216,24 @@ with torch.no_grad():
     print(tclsprb.argmax(dim=-1), stclsprb.argmax(dim=-1), lclsprb.argmax(dim=-1))
     print(tgt)
 
+# infer
+with torch.no_grad():
+    mb_sz = 1
+    k = 0
+    src = data_ten[0, 0, :].unsqueeze(0)
+    tgt = data_ten[0, 1, :]
+    embedded_src = e(src)
+    dt_src = torch.reshape(embedded_src, (mb_sz, 1, src.shape[-1] * emb_dim))
+
+    em_st_src = se(st_data_ten[0, :].t()).unsqueeze(0).to(device)
+    tfmr_enc_out = tfmr_enc.forward(em_st_src)
+
+    tfmr_out = tfmr_dec(dt_src, memory=tfmr_enc_out)
+
+    tclsprb = tc.forward(tfmr_out)
+    stclsprb = stc.forward(tfmr_out)
+    lclsprb = ltc.forward(tfmr_out)
+
+    tclsprb = tclsprb.reshape(mb_sz, n_tokens)
+    stclsprb = stclsprb.reshape(mb_sz, n_tokens)
+    lclsprb = lclsprb.reshape(mb_sz, n_tokens)
