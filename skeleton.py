@@ -15,21 +15,20 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # data is 4 batches of bptt 2, minibatch size 2,  3 act categories
 data = [
     [
-        [["sos", "sos", "sos"], ["tx0", "stx0", "lx0"]],  #           --|
-        #                                                               | - mini batch
-        [["sos", "sos", "sos"], ["ty0", "sty0", "ly0"]],  #           --|
+        [["sos", "sos", "sos"], ["sos", "sos", "sos"]],
+        [["tx0", "stx0", "lx0"], ["ty0", "sty0", "ly0"]],
     ],
     [  # bptt record 1
-        [["tx0", "stx0", "lx0"], ["tx1", "stx1", "lx1"]],
-        [["ty0", "sty0", "ly0"], ["ty1", "sty1", "ly1"]],
+        [["tx0", "stx0", "lx0"], ["ty0", "sty0", "ly0"]],
+        [["tx1", "stx1", "lx1"], ["ty1", "sty1", "ly1"]],
     ],
     [  # bptt record 2
-        [["tx1", "stx1", "lx1"], ["tx2", "stx2", "lx2"]],
-        [["ty1", "sty1", "ly1"], ["ty2", "sty2", "ly2"]],
+        [["tx1", "stx1", "lx1"], ["ty1", "sty1", "ly1"]],
+        [["eos", "eos", "eos"], ["ty2", "sty2", "ly2"]],
     ],
     [  # bptt record N
-        [["tx2", "stx2", "lx2"], ["eos", "eos", "eos"]],
-        [["ty2", "sty2", "ly2"], ["eos1", "eos1", "eos1"]],
+        [["eos", "eos", "eos"], ["ty2", "sty2", "ly2"]],
+        [["eos", "eos", "eos"], ["eos", "eos", "eos"]],
     ],
 ]
 
@@ -88,7 +87,7 @@ te = nn.Embedding(n_tokens, emb_dim).to(device)
 ste = nn.Embedding(n_tokens, emb_dim).to(device)
 le = nn.Embedding(n_tokens, emb_dim).to(device)
 ##
-se = nn.Embedding(7, 300).to(device)
+se = nn.Embedding(7, 100).to(device)
 tfmr_dec_l = nn.TransformerDecoderLayer(num_seqences_into_tran, num_attn_heads).to(
     device
 )
@@ -136,7 +135,7 @@ for i in range(epochs):
         src = data_ten[k, :, :, :]
         tgt = data_ten[k + 1, :, :, :]
 
-        em_st_src = se(st_data_ten).mean(dim=1).expand((2, 2, 300))
+        em_st_src = se(st_data_ten).flatten(1).unsqueeze(0).repeat(1, 1, 1)
         embedded_src = e(src)
 
         # concat activity category vectors together in last dimension
@@ -192,19 +191,19 @@ tc.eval().to(device)
 # "validate" we have memorized data acceptably
 with torch.no_grad():
     k = 0
-    src = data_ten[0, :, :, :]
-    tgt = data_ten[1, :, :, :]
+    src = data_ten[0, :, :, :][0]
+    tgt = data_ten[0, :, :, :][1]
     embedded_src = e(src)
-    dt_src = torch.reshape(embedded_src, (2, 2, 300))
-    tfmr_out = tfmr_dec(dt_src, memory=torch.zeros(dt_src.shape).to(device))
+    dt_src = torch.reshape(embedded_src, (1, 2, 300))
+    tfmr_out = tfmr_dec(dt_src, memory=tfmr_enc_out)
 
     tclsprb = tc.forward(tfmr_out)
     stclsprb = stc.forward(tfmr_out)
     lclsprb = ltc.forward(tfmr_out)
 
-    tclsprb = tclsprb.reshape(4, n_tokens)
-    stclsprb = stclsprb.reshape(4, n_tokens)
-    lclsprb = lclsprb.reshape(4, n_tokens)
+    tclsprb = tclsprb.reshape(2, n_tokens)
+    stclsprb = stclsprb.reshape(2, n_tokens)
+    lclsprb = lclsprb.reshape(2, n_tokens)
 
     tgt_loss = crit(tclsprb, tgt[..., 0].flatten())
     tgt_loss += crit(stclsprb, tgt[..., 1].flatten())
