@@ -107,11 +107,11 @@ num_lvl_tokens = len(LVL.vocab.itos)
 num_rspgrp_tokens = len(RESPGROUP.vocab.itos)
 
 emb_dim = 100
-num_seqences_into_tran = 300
+embedding_dim_into_tran = 400
 num_attn_heads = 2
 num_dec_layers = 2
 # dims (mini_batch(batch_sz) x bptt x act_cats)
-bptt = 2  # num lagged activities
+bptt = 20  # num lagged activities
 batch_sz = 2  # num crs in mini batch
 
 te = nn.Embedding(num_type_tokens, emb_dim).to(device)
@@ -119,16 +119,18 @@ ste = nn.Embedding(num_subtype_tokens, emb_dim).to(device)
 le = nn.Embedding(num_lvl_tokens, emb_dim).to(device)
 rspgrpe = nn.Embedding(num_rspgrp_tokens, emb_dim).to(device)
 
-tfmr_dec_l = nn.TransformerDecoderLayer(num_seqences_into_tran, num_attn_heads).to(
+tfmr_dec_l = nn.TransformerDecoderLayer(embedding_dim_into_tran, num_attn_heads).to(
     device
 )
 tfmr_dec = nn.TransformerDecoder(tfmr_dec_l, num_dec_layers).to(device)
-tfmr_enc_l = nn.TransformerEncoderLayer(768, 1).to(device)
+tfmr_enc_l = nn.TransformerEncoderLayer(400, 1).to(device)
 tfmr_enc = nn.TransformerEncoder(tfmr_enc_l, 1).to(device)
-tc = nn.Linear(num_seqences_into_tran, num_type_tokens).to(device)
-stc = nn.Linear(num_seqences_into_tran, num_subtype_tokens).to(device)
-ltc = nn.Linear(num_seqences_into_tran, num_lvl_tokens).to(device)
-rspgrpc = nn.Linear(num_seqences_into_tran, num_rspgrp_tokens).to(device)
+tc = nn.Linear(embedding_dim_into_tran, num_type_tokens).to(device)
+stc = nn.Linear(embedding_dim_into_tran, num_subtype_tokens).to(device)
+ltc = nn.Linear(embedding_dim_into_tran, num_lvl_tokens).to(device)
+rspgrpc = nn.Linear(embedding_dim_into_tran, num_rspgrp_tokens).to(device)
+
+bertsqueeze = nn.Linear(768, 400).to(device)
 
 crit = nn.CrossEntropyLoss().to(device)
 optimizer = torch.optim.AdamW(
@@ -141,6 +143,9 @@ optimizer = torch.optim.AdamW(
         {"params": ste.parameters()},
         {"params": le.parameters()},
         {"params": tfmr_enc.parameters()},
+        {"params": rspgrpe.parameters()},
+        {"params": rspgrpc.parameters()},
+        {"params": bertsqueeze.parameters()},
     ]
 )
 
@@ -152,12 +157,7 @@ tokenizer = DistilBertTokenizer.from_pretrained(
 )
 
 tfmr_dec.train().to(device)
-
-# make 4d tensor of (bpttbatch x minibatch x activities lookback window(seq lengths) x activity categories)
-data_ten = torch.tensor(data_array).long().to(device)
-
-# simple static data tensor
-st_data_ten = torch.tensor(static_data).long().to(device)
+tfmr_enc.train().to(device)
 
 i = 0
 epochs = 15  # 30 seems enough to memorize this toy set
@@ -177,6 +177,7 @@ for i in range(epochs):
             static_data.tolist(), padding=True, truncation=True, return_tensors="pt"
         )
         em_st_src = static_model(**static_tok_output)[0].mean(1).unsqueeze(0).to(device)
+        em_st_src = bertsqueeze(em_st_src)
 
         emb_type = te(data[..., 0])
         emb_subtype = ste(data[..., 1])
@@ -201,7 +202,7 @@ for i in range(epochs):
         tfmr_enc_out = tfmr_enc.forward(em_st_src)
 
         # forward pass main transfomer
-        tfmr_out = tfmr_dec.forward(dt_src, memory=em_st_src, tgt_mask=mask)
+        tfmr_out = tfmr_dec.forward(dt_src, memory=tfmr_enc_out, tgt_mask=mask)
 
         # get class probs of activity elements
         tclsprb = tc.forward(tfmr_out)
@@ -209,10 +210,10 @@ for i in range(epochs):
         lclsprb = ltc.forward(tfmr_out)
         rspgrpsprb = rspgrpc.forward(tfmr_out)
 
-        tclsprb = tclsprb.reshape(4, num_type_tokens)
-        stclsprb = stclsprb.reshape(4, num_subtype_tokens)
-        lclsprb = lclsprb.reshape(4, num_lvl_tokens)
-        lclsprb = rspgrpsprb.reshape(4, num_rspgrp_tokens)
+        tclsprb = tclsprb.reshape(40, num_type_tokens)
+        stclsprb = stclsprb.reshape(40, num_subtype_tokens)
+        lclsprb = lclsprb.reshape(40, num_lvl_tokens)
+        lclsprb = rspgrpsprb.reshape(40, num_rspgrp_tokens)
 
         tgt_loss += crit(tclsprb, tgt[..., 0].flatten())
         tgt_loss += crit(stclsprb, tgt[..., 1].flatten())
