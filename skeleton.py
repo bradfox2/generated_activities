@@ -106,8 +106,8 @@ num_rspgrp_tokens = len(RESPGROUP.vocab.itos)
 
 emb_dim = 100
 embedding_dim_into_tran = 400
-num_attn_heads = 2
-num_dec_layers = 2
+num_attn_heads = 4
+num_dec_layers = 4
 # dims (mini_batch(batch_sz) x bptt x act_cats)
 bptt = 20  # num lagged activities
 batch_sz = 2  # num crs in mini batch
@@ -178,11 +178,8 @@ for i in range(epochs):
         emb_lvl = le(data[..., 2])
         emb_rspgrp = rspgrpe(data[..., 3])
 
-        # em_st_src = se(st_data_ten).flatten(1).unsqueeze(0).repeat(1, 1, 1)
-        dt_src = torch.cat([emb_type, emb_subtype, emb_lvl, emb_rspgrp], dim=2)
-
         # concat activity category vectors together in last dimension
-        # dt_src = torch.reshape(embedded_src, (bptt, batch_sz, src.shape[-1] * emb_dim))
+        dt_src = torch.cat([emb_type, emb_subtype, emb_lvl, emb_rspgrp], dim=2)
 
         # mask any future sequences so attention will not use them
         mask = (torch.triu(torch.ones(20, 20)) == 1).transpose(0, 1).to(device)
@@ -207,12 +204,12 @@ for i in range(epochs):
         tclsprb = tclsprb.reshape(40, num_type_tokens)
         stclsprb = stclsprb.reshape(40, num_subtype_tokens)
         lclsprb = lclsprb.reshape(40, num_lvl_tokens)
-        lclsprb = rspgrpsprb.reshape(40, num_rspgrp_tokens)
+        rspgrpsprb = rspgrpsprb.reshape(40, num_rspgrp_tokens)
 
         tgt_loss += crit(tclsprb, tgt[..., 0].flatten())
         tgt_loss += crit(stclsprb, tgt[..., 1].flatten())
         tgt_loss += crit(lclsprb, tgt[..., 2].flatten())
-        tgt_loss += crit(lclsprb, tgt[..., 2].flatten())
+        tgt_loss += crit(rspgrpsprb, tgt[..., 2].flatten())
 
         # tgt_loss.backward()
         # optimizer.step()
@@ -231,27 +228,33 @@ tfmr_enc.eval().to(device)
 te.eval().to(device)
 ste.eval().to(device)
 le.eval().to(device)
-e.eval().to(device)
 ltc.eval().to(device)
 stc.eval().to(device)
 tc.eval().to(device)
+static_model.eval().to(device)
 
 # "validate" we have memorized data acceptably
 with torch.no_grad():
     k = 0
-    src = data_ten[0, :, :, :][0]
-    tgt = data_ten[0, :, :, :][1]
-    embedded_src = e(src)
-    dt_src = torch.reshape(embedded_src, (1, 2, 300))
+    src = data[0]
+    tgt = tgt[1]
+    emb_type = te(src[..., 0])
+    emb_subtype = ste(src[..., 1])
+    emb_lvl = le(src[..., 2])
+    emb_rspgrp = rspgrpe(src[..., 3])
+    dt_src = torch.cat([emb_type, emb_subtype, emb_lvl, emb_rspgrp], dim=1)
+    dt_src = torch.reshape(dt_src, (1, 2, 400))
     tfmr_out = tfmr_dec(dt_src, memory=tfmr_enc_out)
 
     tclsprb = tc.forward(tfmr_out)
     stclsprb = stc.forward(tfmr_out)
     lclsprb = ltc.forward(tfmr_out)
+    rspgrpsprb = rspgrpc.forward(tfmr_out)
 
-    tclsprb = tclsprb.reshape(2, n_tokens)
-    stclsprb = stclsprb.reshape(2, n_tokens)
-    lclsprb = lclsprb.reshape(2, n_tokens)
+    tclsprb = tclsprb.reshape(2, num_type_tokens)
+    stclsprb = stclsprb.reshape(2, num_subtype_tokens)
+    lclsprb = lclsprb.reshape(2, num_lvl_tokens)
+    rspgrpsprb = rspgrpsprb.reshape(2, num_rspgrp_tokens)
 
     tgt_loss = crit(tclsprb, tgt[..., 0].flatten())
     tgt_loss += crit(stclsprb, tgt[..., 1].flatten())
@@ -260,3 +263,4 @@ with torch.no_grad():
     print(tgt_loss)
     print(tclsprb.argmax(dim=-1), stclsprb.argmax(dim=-1), lclsprb.argmax(dim=-1))
     print(tgt)
+
