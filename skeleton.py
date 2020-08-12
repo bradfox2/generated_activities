@@ -99,10 +99,6 @@ def gen_inp_data_set(seq_data: torch.Tensor, static_data: np.array):
         yield inp, target, static_data[i]
 
 
-# toy static data, unique token sequences
-# this should help model seperate the sos -> tx0/ty0 sequence prediction
-static_data = [[1, 2, 3], [4, 5, 6]]
-
 num_type_tokens = len(TYPE.vocab.itos)
 num_subtype_tokens = len(SUBTYPE.vocab.itos)
 num_lvl_tokens = len(LVL.vocab.itos)
@@ -133,6 +129,10 @@ ltc = nn.Linear(embedding_dim_into_tran, num_lvl_tokens).to(device)
 rspgrpc = nn.Linear(embedding_dim_into_tran, num_rspgrp_tokens).to(device)
 
 bertsqueeze = nn.Linear(768, 400).to(device)
+static_model = DistilBertModel.from_pretrained("distilbert-base-uncased").to(device)
+tokenizer = DistilBertTokenizer.from_pretrained(
+    "distilbert-base-uncased", return_tensors="pt"
+)
 
 crit = nn.CrossEntropyLoss().to(device)
 optimizer = torch.optim.AdamW(
@@ -152,11 +152,6 @@ optimizer = torch.optim.AdamW(
 )
 
 
-static_model = DistilBertModel.from_pretrained("distilbert-base-uncased")
-tokenizer = DistilBertTokenizer.from_pretrained(
-    "distilbert-base-uncased", return_tensors="pt"
-)
-
 tfmr_dec.train().to(device)
 tfmr_enc.train().to(device)
 
@@ -167,17 +162,16 @@ for i in range(epochs):
 
     print(i)
     tgt_loss = 0.0
-    optimizer.zero_grad()
-
     data_gen = gen_inp_data_set(seq_data_trn, static_data_trn)
 
-    # data, target_data, static_data = next(data_gen)
+    counter = 0
     for data, tgt, static_data in data_gen:
 
+        optimizer.zero_grad()
         static_tok_output = tokenizer(
             static_data.tolist(), padding=True, truncation=True, return_tensors="pt"
-        )
-        em_st_src = static_model(**static_tok_output)[0].mean(1).unsqueeze(0).to(device)
+        ).to(device)
+        em_st_src = static_model(**static_tok_output)[0].mean(1).unsqueeze(0)
         em_st_src = bertsqueeze(em_st_src)
 
         emb_type = te(data[..., 0])
@@ -221,14 +215,15 @@ for i in range(epochs):
         tgt_loss += crit(lclsprb, tgt[..., 2].flatten())
         tgt_loss += crit(lclsprb, tgt[..., 2].flatten())
 
+        # tgt_loss.backward()
+        # optimizer.step()
+        counter += 1
         tgt_loss.backward()
         optimizer.step()
+        #        optimizer.zero_grad()
         print(tgt_loss)
-
         tgt_loss = 0.0
 
-    if i % 10 == 0:
-        print(tclsprb.argmax(dim=-1), stclsprb.argmax(dim=-1), lclsprb.argmax(dim=-1))
 
 # turn on eval
 tfmr_dec.eval().to(device)
