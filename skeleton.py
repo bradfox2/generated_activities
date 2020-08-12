@@ -43,7 +43,7 @@ trnseq, trnstat, tstseq, tststat = get_dat_data()
     numer_tst_static_data,
 ) = process(trnseq, trnstat, tstseq, tststat)
 
-trunc_numer_trn_act_seqs = truncate_series_by_len(numer_trn_act_seqs, max_length=20)
+trunc_numer_trn_act_seqs = truncate_series_by_len(numer_trn_act_seqs, max_len=20)
 
 padded_numer_trn_act_seqs = pad_series_to_max_len(numer_trn_act_seqs, pad_token=2)
 
