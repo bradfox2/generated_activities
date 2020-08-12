@@ -5,6 +5,7 @@ ie. ['sos','sos'] -> ['t1', 's1'] where t and s are from different categorical s
 but where value of  s1 is dependent on t1
 """
 
+from act_mod.load_staged_acts import get_dat_data
 import torch
 import torch.nn as nn
 import numpy as np
@@ -31,6 +32,8 @@ data = [
         [["eos", "eos", "eos"], ["eos", "eos", "eos"]],
     ],
 ]
+
+trnseq, trnstat, tstseq, tststat = get_dat_data()
 
 # toy static data, unique token sequences
 # this should help model seperate the sos -> tx0/ty0 sequence prediction
@@ -121,7 +124,7 @@ data_ten = torch.tensor(data_array).long().to(device)
 st_data_ten = torch.tensor(static_data).long().to(device)
 
 i = 0
-epochs = 30  # 30 seems enough to memorize this toy set
+epochs = 15  # 30 seems enough to memorize this toy set
 # TODO: static data does not seem to make a difference in model differentiating tx0/ty0, and about 40 epochs loss plataeus
 for i in range(epochs):
 
