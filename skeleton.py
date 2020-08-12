@@ -6,18 +6,20 @@ but where value of  s1 is dependent on t1
 """
 
 from typing import List
+
 import numpy as np
 import pandas
 import torch
 import torch.nn as nn
+from transformers import DistilBertModel, DistilBertTokenizer
 
 from act_mod.data_processing import (
     LVL,
     RESPGROUP,
     SUBTYPE,
     TYPE,
-    process,
     pad_series_to_max_len,
+    process,
     truncate_series_by_len,
 )
 from act_mod.load_staged_acts import get_dat_data
@@ -149,7 +151,6 @@ optimizer = torch.optim.AdamW(
     ]
 )
 
-from transformers import DistilBertModel, DistilBertTokenizer
 
 static_model = DistilBertModel.from_pretrained("distilbert-base-uncased")
 tokenizer = DistilBertTokenizer.from_pretrained(
@@ -264,4 +265,3 @@ with torch.no_grad():
     print(tgt_loss)
     print(tclsprb.argmax(dim=-1), stclsprb.argmax(dim=-1), lclsprb.argmax(dim=-1))
     print(tgt)
-
