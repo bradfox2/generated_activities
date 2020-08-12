@@ -1,10 +1,7 @@
-'''example code of how we might tokenize individual categorial variables'''
+"""example code of how we might tokenize individual categorial variables"""
 
 import pandas
 import torchtext
-from torchtext.data import Example
-
-from load_staged_acts import get_dat_data
 
 # trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data = get_dat_data()
 
@@ -115,7 +112,8 @@ def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data):
     sorted_num_seqs = tst_act_seqs.apply(len).sort_values().index
     numer_tst_act_seqs = numer_tst_act_seqs.reindex(sorted_num_seqs)
 
-    from transformers import LongformerTokenizer, DistilBertTokenizer
+    #from transformers import LongformerTokenizer
+    from transformers import DistilBertTokenizer
 
     # tokenizer = LongformerTokenizer.from_pretrained("allenai/longformer-base-4096")
     # numer_trn_static_data = trn_static_data["DESCR"].apply(tokenizer.encode)

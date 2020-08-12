@@ -5,11 +5,13 @@ ie. ['sos','sos'] -> ['t1', 's1'] where t and s are from different categorical s
 but where value of  s1 is dependent on t1
 """
 
-from act_mod.load_staged_acts import get_dat_data
+import numpy as np
+import pandas
 import torch
 import torch.nn as nn
-import numpy as np
 
+from act_mod.data_processing import TYPE, process
+from act_mod.load_staged_acts import get_dat_data
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -34,6 +36,34 @@ data = [
 ]
 
 trnseq, trnstat, tstseq, tststat = get_dat_data()
+(
+    numer_trn_act_seqs,
+    numer_tst_act_seqs,
+    numer_trn_static_data,
+    numer_tst_static_data,
+) = process(trnseq, trnstat, tstseq, tststat)
+
+
+def truncate_series_by_len(series: pandas.Series, max_len: int):
+    return series[series.apply(len) <= max_len]
+
+
+truncate_series_by_len(numer_trn_act_seqs, 20)
+
+
+def pad_series_to_max_len(series: pandas.Series, pad_token: int = 2):
+    pad_len = max(series.apply(len))
+    num_fields_to_pad = len(series[0]) if series.empty and len(series) >= 1 else 1
+
+    def pad(series_element):
+        num_pads_needed = pad_len - len(series_element)
+        series_element.append([[pad_token] * 4] * num_pads_needed)
+        return series_element
+
+    return series.apply(pad)
+
+padded_numer_trn_act_seqs = pad_series_to_max_len(numer_trn_act_seqs)
+
 
 # toy static data, unique token sequences
 # this should help model seperate the sos -> tx0/ty0 sequence prediction
@@ -215,4 +245,3 @@ with torch.no_grad():
     print(tgt_loss)
     print(tclsprb.argmax(dim=-1), stclsprb.argmax(dim=-1), lclsprb.argmax(dim=-1))
     print(tgt)
-
