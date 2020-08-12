@@ -45,6 +45,21 @@ RESPGROUP = torchtext.data.Field(
     pad_token=pad_token,
 )
 
+def truncate_series_by_len(series: pandas.Series, max_len: int):
+    return series[series.apply(len) <= max_len]
+
+def pad(series_element, pad_len, pad_token, num_fields_to_pad):
+    num_pads_needed = pad_len - len(series_element)
+    return series_element + [[pad_token] * num_fields_to_pad] * num_pads_needed
+
+a = [[0, 0, 0, 0]]
+assert pad(a, 2, 1, 4) == [[0, 0, 0, 0], [1, 1, 1, 1]]
+
+def pad_series_to_max_len(series: pandas.Series, pad_token: int = 2):
+    pad_len = max(series.apply(len))
+    num_fields_to_pad = len(series[0][0]) if not series.empty and len(series[0]) >= 1 else 1
+    return series.apply(lambda x: pad(x, pad_len, pad_token, num_fields_to_pad))
+
 
 def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data):
     TYPE.build_vocab(
@@ -135,6 +150,8 @@ def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data):
         numer_trn_static_data,
         numer_tst_static_data,
     )
+
+
 
 
 if __name__ == "__main__":

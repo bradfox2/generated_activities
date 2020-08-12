@@ -10,7 +10,7 @@ import pandas
 import torch
 import torch.nn as nn
 
-from act_mod.data_processing import TYPE, process
+from act_mod.data_processing import TYPE, process, pad_series_to_max_len
 from act_mod.load_staged_acts import get_dat_data
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -43,27 +43,9 @@ trnseq, trnstat, tstseq, tststat = get_dat_data()
     numer_tst_static_data,
 ) = process(trnseq, trnstat, tstseq, tststat)
 
+trunc_numer_trn_act_seqs = truncate_series_by_len(numer_trn_act_seqs, max_length=20)
 
-def truncate_series_by_len(series: pandas.Series, max_len: int):
-    return series[series.apply(len) <= max_len]
-
-
-truncate_series_by_len(numer_trn_act_seqs, 20)
-
-
-def pad_series_to_max_len(series: pandas.Series, pad_token: int = 2):
-    pad_len = max(series.apply(len))
-    num_fields_to_pad = len(series[0]) if series.empty and len(series) >= 1 else 1
-
-    def pad(series_element):
-        num_pads_needed = pad_len - len(series_element)
-        series_element.append([[pad_token] * 4] * num_pads_needed)
-        return series_element
-
-    return series.apply(pad)
-
-padded_numer_trn_act_seqs = pad_series_to_max_len(numer_trn_act_seqs)
-
+padded_numer_trn_act_seqs = pad_series_to_max_len(numer_trn_act_seqs, pad_token=2)
 
 # toy static data, unique token sequences
 # this should help model seperate the sos -> tx0/ty0 sequence prediction
