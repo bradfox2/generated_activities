@@ -1,5 +1,7 @@
 """example code of how we might tokenize individual categorial variables"""
 
+from typing import Any, List
+
 import pandas
 import torchtext
 
@@ -45,19 +47,24 @@ RESPGROUP = torchtext.data.Field(
     pad_token=pad_token,
 )
 
+
 def truncate_series_by_len(series: pandas.Series, max_len: int):
     return series[series.apply(len) <= max_len]
+
 
 def pad(series_element, pad_len, pad_token, num_fields_to_pad):
     num_pads_needed = pad_len - len(series_element)
     return series_element + [[pad_token] * num_fields_to_pad] * num_pads_needed
 
+
 a = [[0, 0, 0, 0]]
 assert pad(a, 2, 1, 4) == [[0, 0, 0, 0], [1, 1, 1, 1]]
 
-def pad_series_to_max_len(series: pandas.Series, pad_token: int = 2):
-    pad_len = max(series.apply(len))
-    num_fields_to_pad = len(series[0][0]) if not series.empty and len(series[0]) >= 1 else 1
+
+def pad_series_to_max_len(series: pandas.Series, pad_token: int = 2, pad_len: int = 21):
+    num_fields_to_pad = (
+        len(series[0][0]) if not series.empty and len(series[0]) >= 1 else 1
+    )
     return series.apply(lambda x: pad(x, pad_len, pad_token, num_fields_to_pad))
 
 
@@ -120,14 +127,14 @@ def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data):
             ]
 
     numer_trn_act_seqs = trn_act_seqs.apply(add_start_stop_and_numericalize)
-    sorted_num_seqs = trn_act_seqs.apply(len).sort_values().index
-    numer_trn_act_seqs = numer_trn_act_seqs.reindex(sorted_num_seqs)
+    sorted_num_seqs_trn = trn_act_seqs.apply(len).sort_values().index
+    numer_trn_act_seqs = numer_trn_act_seqs.reindex(sorted_num_seqs_trn)
 
     numer_tst_act_seqs = tst_act_seqs.apply(add_start_stop_and_numericalize)
-    sorted_num_seqs = tst_act_seqs.apply(len).sort_values().index
-    numer_tst_act_seqs = numer_tst_act_seqs.reindex(sorted_num_seqs)
+    sorted_num_seqs_tst = tst_act_seqs.apply(len).sort_values().index
+    numer_tst_act_seqs = numer_tst_act_seqs.reindex(sorted_num_seqs_tst)
 
-    #from transformers import LongformerTokenizer
+    # from transformers import LongformerTokenizer
     from transformers import DistilBertTokenizer
 
     # tokenizer = LongformerTokenizer.from_pretrained("allenai/longformer-base-4096")
@@ -135,14 +142,17 @@ def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data):
     # numer_tst_static_data = tst_static_data["DESCR"].apply(tokenizer.encode)
 
     tokenizer = DistilBertTokenizer.from_pretrained(
-        "distilbert-base-uncased", return_tensors="pt"
+        "distilbert-base-uncased", return_tensors="pt", pad_token="<pad>"
     )
-    numer_trn_static_data = trn_static_data["DESCR"].apply(
-        lambda x: tokenizer.encode(x[:512])
-    )
-    numer_tst_static_data = tst_static_data["DESCR"].apply(
-        lambda x: tokenizer.encode(x[:512])
-    )
+    numer_trn_static_data = trn_static_data["DESCR"]  # .apply(
+    # lambda x: tokenizer.encode(x[:512])
+    # )
+    numer_tst_static_data = tst_static_data["DESCR"]  # .apply(
+    # lambda x: tokenizer.encode(x[:512])
+    # )
+
+    numer_trn_static_data = numer_trn_static_data.reindex(sorted_num_seqs_trn)
+    numer_tst_static_data = numer_tst_static_data.reindex(sorted_num_seqs_tst)
 
     return (
         numer_trn_act_seqs,
@@ -150,8 +160,6 @@ def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data):
         numer_trn_static_data,
         numer_tst_static_data,
     )
-
-
 
 
 if __name__ == "__main__":
