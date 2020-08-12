@@ -167,7 +167,6 @@ for i in range(epochs):
     counter = 0
     for data, tgt, static_data in data_gen:
 
-        optimizer.zero_grad()
         static_tok_output = tokenizer(
             static_data.tolist(), padding=True, truncation=True, return_tensors="pt"
         ).to(device)
@@ -218,11 +217,12 @@ for i in range(epochs):
         # tgt_loss.backward()
         # optimizer.step()
         counter += 1
-        tgt_loss.backward()
-        optimizer.step()
-        #        optimizer.zero_grad()
-        print(tgt_loss)
-        tgt_loss = 0.0
+        if counter % 10 == 0:
+            tgt_loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+            print(tgt_loss / 10)
+            tgt_loss = 0.0
 
 
 # turn on eval
