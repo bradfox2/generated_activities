@@ -54,7 +54,9 @@ sequence_length = 5
     numer_tst_act_seqs,
     numer_trn_static_data,
     numer_tst_static_data,
-) = process(trnseq, trnstat, tstseq, tststat, sequence_length)
+) = process(
+    trnseq, trnstat, tstseq, tststat, sequence_length + 1
+)  # add 2 for sos and eos
 
 assert len(numer_trn_act_seqs) == len(numer_trn_static_data)
 assert numer_trn_act_seqs.index[0] == numer_trn_static_data.index[0]
@@ -63,11 +65,6 @@ assert numer_trn_act_seqs.index[0] == numer_trn_static_data.index[0]
 max_len = sequence_length + 1
 num_act_cats = 4
 batch_sz = 8
-
-trunc_numer_trn_act_seqs = truncate_series_by_len(numer_trn_act_seqs, max_len)
-padded_numer_trn_act_seqs = pad_series_to_max_len(
-    trunc_numer_trn_act_seqs, pad_token=2, pad_len=max_len
-)
 
 
 def batchify_act_seqs(data, batch_sz):
@@ -81,7 +78,7 @@ def batchify_act_seqs(data, batch_sz):
     return torch.cat(chunks, dim=2).to(device)
 
 
-seq_data_trn = batchify_act_seqs(padded_numer_trn_act_seqs, batch_sz).to(device)
+seq_data_trn = batchify_act_seqs(numer_trn_act_seqs, batch_sz).to(device)
 
 
 def batchify_static_data(static_data, batch_sz):
@@ -117,10 +114,10 @@ num_dec_layers = 2
 # dims (mini_batch(batch_sz) x bptt x act_cats)
 bptt = sequence_length  # sequence of activities of cr
 
-te = nn.Embedding(num_type_tokens, emb_dim).to(device)
-ste = nn.Embedding(num_subtype_tokens, emb_dim).to(device)
-le = nn.Embedding(num_lvl_tokens, emb_dim).to(device)
-rspgrpe = nn.Embedding(num_rspgrp_tokens, emb_dim).to(device)
+te = nn.Embedding(num_type_tokens, emb_dim, padding_idx=3).to(device)
+ste = nn.Embedding(num_subtype_tokens, emb_dim, padding_idx=3).to(device)
+le = nn.Embedding(num_lvl_tokens, emb_dim, padding_idx=3).to(device)
+rspgrpe = nn.Embedding(num_rspgrp_tokens, emb_dim, padding_idx=3).to(device)
 
 act_emb_layer_norm = nn.LayerNorm(emb_dim * num_act_cats).to(device)
 
@@ -163,7 +160,6 @@ optimizer = torch.optim.AdamW(
         {"params": bertsqueeze.parameters()},
         # {"params": tmfr_out_layer_norm.parameters()},
     ],
-    lr=0.1,
 )
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 5.0, gamma=0.95)
 
@@ -195,6 +191,7 @@ for i in range(epochs):
         static_tok_output = tokenizer(
             static_data.tolist(), padding=True, truncation=True, return_tensors="pt"
         ).to(device)
+
         em_st_src = static_model(**static_tok_output)[0].mean(1).unsqueeze(0)
         em_st_src = bertsqueeze(em_st_src)
         em_st_src = bert_squeeze_layer_norm(em_st_src)
@@ -216,12 +213,15 @@ for i in range(epochs):
             .masked_fill(tgt_mask == 1, float(0.0))
         ).to(device)
 
-        tgt_key_padding_mask = data.bool()
-        tgt_key_padding_mask = (
-            tgt_key_padding_mask.float()
-            .masked_fill(tgt_key_padding_mask == 0, float("-inf"))
-            .masked_fill(tgt_key_padding_mask == 1, float(0.0))
-        ).to(device)
+        # tgt_key_padding_mask dims = (batch_sz x seq_length)
+
+        tgt_key_padding_mask = data == 3
+        tgt_key_padding_mask = tgt_key_padding_mask.permute(1, 0, 2)[:, :, 0]
+        # tgt_key_padding_mask = (
+        #     tgt_key_padding_mask.float()
+        #     .masked_fill(tgt_key_padding_mask == 0, float("-inf"))
+        #     .masked_fill(tgt_key_padding_mask == 1, float(0.0))
+        # ).permute(1,0,2).to(device)
 
         # process static data
         tfmr_enc_out = tfmr_enc.forward(em_st_src)
@@ -253,7 +253,6 @@ for i in range(epochs):
         tgt_loss += crit(stclsprb, tgt[..., 1].flatten())
         tgt_loss += crit(lclsprb, tgt[..., 2].flatten())
         tgt_loss += crit(rspgrpsprb, tgt[..., 2].flatten())
-        print(tgt_loss)
         tgt_loss.backward()
         # _=torch.nn.utils.clip_grad_norm_(
         #     list(
@@ -284,6 +283,7 @@ for i in range(epochs):
         optimizer.step()
         db_optim.step()
         optimizer.zero_grad()
+
         total_loss += tgt_loss
 
         if counter % log_interval == 0:

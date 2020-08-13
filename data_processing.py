@@ -71,32 +71,36 @@ def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data, max_le
         [
             [act[0] for act in actlist if not pandas.isna(act[0])]
             for actlist in trn_act_seqs
-        ]
+        ],
+        specials=["<pad>"],
     )
     SUBTYPE.build_vocab(
         [
             [act[1] for act in actlist if not pandas.isna(act[1])]
             for actlist in trn_act_seqs
-        ]
+        ],
+        specials=["<pad>"],
     )
     LVL.build_vocab(
         [
             [act[2] for act in actlist if not pandas.isna(act[2])]
             for actlist in trn_act_seqs
-        ]
+        ],
+        specials=["<pad>"],
     )
     RESPGROUP.build_vocab(
         [
             [act[3] for act in actlist if not pandas.isna(act[3])]
             for actlist in trn_act_seqs
-        ]
+        ],
+        specials=["<pad>"],
     )
 
     # add sequencing indicator tokens and numericalize
 
     def add_start_stop_and_numericalize_and_pad(act_seq, max_len):
         if pandas.isna(act_seq[0][0]):
-            return [
+            act_seq = [
                 [
                     TYPE.vocab.stoi[init_token],
                     SUBTYPE.vocab.stoi[init_token],
@@ -110,6 +114,9 @@ def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data, max_le
                     RESPGROUP.vocab.stoi[eos_token],
                 ],
             ]
+            #assume type, st, lvl, rg have pad tokens that reference the same numericalized value
+            act_seq.extend([[TYPE.vocab.stoi[pad_token]] * 4] * (max_len - len(act_seq)))
+            return act_seq
 
         else:
             act_seq.insert(0, [init_token] * len(act_seq[0]))
