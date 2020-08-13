@@ -127,12 +127,12 @@ def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data):
             ]
 
     numer_trn_act_seqs = trn_act_seqs.apply(add_start_stop_and_numericalize)
-    sorted_num_seqs_trn = trn_act_seqs.apply(len).sort_values().index
-    numer_trn_act_seqs = numer_trn_act_seqs.reindex(sorted_num_seqs_trn)
+    shuffled_num_seqs_trn = trn_act_seqs.apply(len).sample(frac=1).index
+    numer_trn_act_seqs = numer_trn_act_seqs.reindex(shuffled_num_seqs_trn)
 
     numer_tst_act_seqs = tst_act_seqs.apply(add_start_stop_and_numericalize)
-    sorted_num_seqs_tst = tst_act_seqs.apply(len).sort_values().index
-    numer_tst_act_seqs = numer_tst_act_seqs.reindex(sorted_num_seqs_tst)
+    shuffled_num_seqs_tst = tst_act_seqs.apply(len).sample(frac=1).index
+    numer_tst_act_seqs = numer_tst_act_seqs.reindex(shuffled_num_seqs_tst)
 
     # from transformers import LongformerTokenizer
     from transformers import DistilBertTokenizer
@@ -144,15 +144,15 @@ def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data):
     tokenizer = DistilBertTokenizer.from_pretrained(
         "distilbert-base-uncased", return_tensors="pt", pad_token="<pad>"
     )
-    numer_trn_static_data = trn_static_data["DESCR"].fillna('<unk>')  # .apply(
+    numer_trn_static_data = trn_static_data["DESCR"].fillna("<unk>")  # .apply(
     # lambda x: tokenizer.encode(x[:512])
     # )
-    numer_tst_static_data = tst_static_data["DESCR"].fillna('<unk>')  # .apply(
+    numer_tst_static_data = tst_static_data["DESCR"].fillna("<unk>")  # .apply(
     # lambda x: tokenizer.encode(x[:512])
     # )
 
-    numer_trn_static_data = numer_trn_static_data.reindex(sorted_num_seqs_trn)
-    numer_tst_static_data = numer_tst_static_data.reindex(sorted_num_seqs_tst)
+    numer_trn_static_data = numer_trn_static_data.reindex(shuffled_num_seqs_trn)
+    numer_tst_static_data = numer_tst_static_data.reindex(shuffled_num_seqs_tst)
 
     return (
         numer_trn_act_seqs,

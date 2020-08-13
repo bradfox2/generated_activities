@@ -10,8 +10,6 @@ import itertools
 import numpy as np
 import torch
 import torch.nn as nn
-
-# TODO: static data does not seem to make a difference in model differentiating tx0/ty0, and about 40 epochs loss plataeus
 from tqdm import tqdm
 from transformers import AdamW, DistilBertModel, DistilBertTokenizer
 
@@ -28,25 +26,25 @@ from load_staged_acts import get_dat_data
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# data is 4 batches of bptt 2, minibatch size 2,  3 act categories
-data = [
-    [
-        [["sos", "sos", "sos"], ["sos", "sos", "sos"]],
-        [["tx0", "stx0", "lx0"], ["ty0", "sty0", "ly0"]],
-    ],
-    [  # bptt record 1
-        [["tx0", "stx0", "lx0"], ["ty0", "sty0", "ly0"]],
-        [["tx1", "stx1", "lx1"], ["ty1", "sty1", "ly1"]],
-    ],
-    [  # bptt record 2
-        [["tx1", "stx1", "lx1"], ["ty1", "sty1", "ly1"]],
-        [["eos", "eos", "eos"], ["ty2", "sty2", "ly2"]],
-    ],
-    [  # bptt record N
-        [["eos", "eos", "eos"], ["ty2", "sty2", "ly2"]],
-        [["eos", "eos", "eos"], ["eos", "eos", "eos"]],
-    ],
-]
+# Example data is 4 batches of bptt 2, minibatch size 2,  3 act categories
+# data = [
+#     [
+#         [["sos", "sos", "sos"], ["sos", "sos", "sos"]],
+#         [["tx0", "stx0", "lx0"], ["ty0", "sty0", "ly0"]],
+#     ],
+#     [  # bptt record 1
+#         [["tx0", "stx0", "lx0"], ["ty0", "sty0", "ly0"]],
+#         [["tx1", "stx1", "lx1"], ["ty1", "sty1", "ly1"]],
+#     ],
+#     [  # bptt record 2
+#         [["tx1", "stx1", "lx1"], ["ty1", "sty1", "ly1"]],
+#         [["eos", "eos", "eos"], ["ty2", "sty2", "ly2"]],
+#     ],
+#     [  # bptt record N
+#         [["eos", "eos", "eos"], ["ty2", "sty2", "ly2"]],
+#         [["eos", "eos", "eos"], ["eos", "eos", "eos"]],
+#     ],
+# ]
 
 trnseq, tstseq, trnstat, tststat = get_dat_data()
 (
@@ -59,10 +57,13 @@ trnseq, tstseq, trnstat, tststat = get_dat_data()
 assert len(numer_trn_act_seqs) == len(numer_trn_static_data)
 assert numer_trn_act_seqs.index[0] == numer_trn_static_data.index[0]
 
-max_len = 21
+sequence_length = 5
+# add one to account for target shifting
+max_len = sequence_length + 1
 num_act_cats = 4
 batch_sz = 4
 trunc_numer_trn_act_seqs = truncate_series_by_len(numer_trn_act_seqs, max_len)
+
 padded_numer_trn_act_seqs = pad_series_to_max_len(
     trunc_numer_trn_act_seqs, pad_token=2, pad_len=max_len
 )
@@ -113,7 +114,7 @@ embedding_dim_into_tran = 400
 num_attn_heads = 4
 num_dec_layers = 4
 # dims (mini_batch(batch_sz) x bptt x act_cats)
-bptt = 20  # num lagged activities
+bptt = sequence_length  # num lagged activities
 
 te = nn.Embedding(num_type_tokens, emb_dim).to(device)
 ste = nn.Embedding(num_subtype_tokens, emb_dim).to(device)
@@ -126,8 +127,8 @@ tfmr_dec_l = nn.TransformerDecoderLayer(embedding_dim_into_tran, num_attn_heads)
     device
 )
 tfmr_dec = nn.TransformerDecoder(tfmr_dec_l, num_dec_layers).to(device)
-tfmr_enc_l = nn.TransformerEncoderLayer(400, 1).to(device)
-tfmr_enc = nn.TransformerEncoder(tfmr_enc_l, 1).to(device)
+# tfmr_enc_l = nn.TransformerEncoderLayer(400, 1).to(device)
+# tfmr_enc = nn.TransformerEncoder(tfmr_enc_l, 1).to(device)
 tc = nn.Linear(embedding_dim_into_tran, num_type_tokens).to(device)
 stc = nn.Linear(embedding_dim_into_tran, num_subtype_tokens).to(device)
 ltc = nn.Linear(embedding_dim_into_tran, num_lvl_tokens).to(device)
@@ -154,7 +155,7 @@ optimizer = torch.optim.AdamW(
         {"params": ste.parameters()},
         {"params": le.parameters()},
         {"params": act_emb_layer_norm.parameters()},
-        {"params": tfmr_enc.parameters()},
+        # {"params": tfmr_enc.parameters()},
         {"params": rspgrpe.parameters()},
         {"params": rspgrpc.parameters()},
         {"params": bert_squeeze_layer_norm.parameters()},
@@ -168,7 +169,7 @@ scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 5.0, gamma=0.95)
 db_optim = AdamW(static_model.parameters(), lr=1e-5)
 
 tfmr_dec.train().to(device)
-tfmr_enc.train().to(device)
+# tfmr_enc.train().to(device)
 bert_squeeze_layer_norm.train()
 act_emb_layer_norm.train()
 static_model.train()
@@ -206,7 +207,7 @@ for i in range(epochs):
         dt_src = act_emb_layer_norm(dt_src)
 
         # mask any future sequences so attention will not use them
-        mask = (torch.triu(torch.ones(20, 20)) == 1).transpose(0, 1).to(device)
+        mask = (torch.triu(torch.ones(bptt, bptt)) == 1).transpose(0, 1).to(device)
         mask = (
             mask.float()
             .masked_fill(mask == 0, float("-inf"))
@@ -214,7 +215,7 @@ for i in range(epochs):
         ).to(device)
 
         # process static data
-        #tfmr_enc_out = tfmr_enc.forward(em_st_src)
+        # tfmr_enc_out = tfmr_enc.forward(em_st_src)
 
         # forward pass main transfomer
         tfmr_out = tfmr_dec.forward(dt_src, memory=em_st_src, tgt_mask=mask)
@@ -293,7 +294,7 @@ for i in range(epochs):
 
 # turn on eval
 tfmr_dec.eval().to(device)
-tfmr_enc.eval().to(device)
+# tfmr_enc.eval().to(device)
 te.eval().to(device)
 ste.eval().to(device)
 le.eval().to(device)
@@ -313,7 +314,7 @@ with torch.no_grad():
     emb_rspgrp = rspgrpe(src[..., 3])
     dt_src = torch.cat([emb_type, emb_subtype, emb_lvl, emb_rspgrp], dim=1)
     dt_src = torch.reshape(dt_src, (1, 2, 400))
-    tfmr_out = tfmr_dec(dt_src, memory=tfmr_enc_out)
+    tfmr_out = tfmr_dec(dt_src, memory=em_st_src)
 
     tclsprb = tc.forward(tfmr_out)
     stclsprb = stc.forward(tfmr_out)
