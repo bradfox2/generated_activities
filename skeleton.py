@@ -46,7 +46,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 trnseq, tstseq, trnstat, tststat = get_dat_data()
 
- # length of sequence of staged activities, first and last will be sos and eos tokens, resepectively.  any remaining staged activity spaces will be padded with <unk>
+# length of sequence of staged activities, first and last will be sos and eos tokens, resepectively.  any remaining staged activity spaces will be padded with <unk>
 sequence_length = 5
 
 (
@@ -167,7 +167,6 @@ optimizer = torch.optim.AdamW(
 )
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 5.0, gamma=0.95)
 
-
 db_optim = AdamW(static_model.parameters(), lr=1e-5)
 
 tfmr_dec.train().to(device)
@@ -188,7 +187,7 @@ for i in range(epochs):
     data_gen = gen_inp_data_set(seq_data_trn, static_data_trn)
 
     counter = 0
-    #data, tgt, static_data = next(data_gen)
+    # data, tgt, static_data = next(data_gen)
     for data, tgt, static_data in tqdm(
         data_gen, total=len(seq_data_trn), position=0, leave=True
     ):
@@ -210,18 +209,30 @@ for i in range(epochs):
         dt_src = act_emb_layer_norm(dt_src)
 
         # mask any future sequences so attention will not use them
-        mask = (torch.triu(torch.ones(bptt, bptt)) == 1).transpose(0, 1).to(device)
-        mask = (
-            mask.float()
-            .masked_fill(mask == 0, float("-inf"))
-            .masked_fill(mask == 1, float(0.0))
+        tgt_mask = (torch.triu(torch.ones(bptt, bptt)) == 1).transpose(0, 1).to(device)
+        tgt_mask = (
+            tgt_mask.float()
+            .masked_fill(tgt_mask == 0, float("-inf"))
+            .masked_fill(tgt_mask == 1, float(0.0))
+        ).to(device)
+
+        tgt_key_padding_mask = data.bool()
+        tgt_key_padding_mask = (
+            tgt_key_padding_mask.float()
+            .masked_fill(tgt_key_padding_mask == 0, float("-inf"))
+            .masked_fill(tgt_key_padding_mask == 1, float(0.0))
         ).to(device)
 
         # process static data
         tfmr_enc_out = tfmr_enc.forward(em_st_src)
 
         # forward pass main transfomer
-        tfmr_out = tfmr_dec.forward(dt_src, memory=tfmr_enc_out, tgt_mask=mask)
+        tfmr_out = tfmr_dec.forward(
+            dt_src,
+            memory=tfmr_enc_out,
+            tgt_mask=tgt_mask,
+            tgt_key_padding_mask=tgt_key_padding_mask,
+        )
 
         # get class probs of activity elements
         tclsprb = tc.forward(tfmr_out)
