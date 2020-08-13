@@ -5,11 +5,15 @@ ie. ['sos','sos'] -> ['t1', 's1'] where t and s are from different categorical s
 but where value of  s1 is dependent on t1
 """
 
+import itertools
+
 import numpy as np
-import pandas
 import torch
 import torch.nn as nn
-from transformers import DistilBertModel, DistilBertTokenizer
+
+# TODO: static data does not seem to make a difference in model differentiating tx0/ty0, and about 40 epochs loss plataeus
+from tqdm import tqdm
+from transformers import AdamW, DistilBertModel, DistilBertTokenizer
 
 from data_processing import (
     LVL,
@@ -84,7 +88,11 @@ def batchify_static_data(static_data, batch_sz):
     n = np.concatenate(np.vsplit(n, batch_sz), 1)
     return n
 
-static_data_trn = batchify_static_data(numer_trn_static_data[:seq_data_trn.shape[0]*batch_sz], batch_sz)
+
+static_data_trn = batchify_static_data(
+    numer_trn_static_data[: seq_data_trn.shape[0] * batch_sz], batch_sz
+)
+
 
 def gen_inp_data_set(seq_data: torch.Tensor, static_data: np.array):
     """generator that advances through the crs dimension, 
@@ -112,6 +120,8 @@ ste = nn.Embedding(num_subtype_tokens, emb_dim).to(device)
 le = nn.Embedding(num_lvl_tokens, emb_dim).to(device)
 rspgrpe = nn.Embedding(num_rspgrp_tokens, emb_dim).to(device)
 
+act_emb_layer_norm = nn.LayerNorm(emb_dim * num_act_cats).to(device)
+
 tfmr_dec_l = nn.TransformerDecoderLayer(embedding_dim_into_tran, num_attn_heads).to(
     device
 )
@@ -123,11 +133,15 @@ stc = nn.Linear(embedding_dim_into_tran, num_subtype_tokens).to(device)
 ltc = nn.Linear(embedding_dim_into_tran, num_lvl_tokens).to(device)
 rspgrpc = nn.Linear(embedding_dim_into_tran, num_rspgrp_tokens).to(device)
 
+tmfr_out_layer_norm = nn.LayerNorm(400).to(device)
+
 bertsqueeze = nn.Linear(768, 400).to(device)
 static_model = DistilBertModel.from_pretrained("./distilbert_weights/").to(device)
 tokenizer = DistilBertTokenizer.from_pretrained(
     "distilbert-base-uncased", return_tensors="pt"
 )
+bert_squeeze_layer_norm = nn.LayerNorm(400).to(device)
+
 
 crit = nn.CrossEntropyLoss().to(device)
 optimizer = torch.optim.AdamW(
@@ -139,36 +153,48 @@ optimizer = torch.optim.AdamW(
         {"params": te.parameters()},
         {"params": ste.parameters()},
         {"params": le.parameters()},
+        {"params": act_emb_layer_norm.parameters()},
         {"params": tfmr_enc.parameters()},
         {"params": rspgrpe.parameters()},
         {"params": rspgrpc.parameters()},
+        {"params": bert_squeeze_layer_norm.parameters()},
         {"params": bertsqueeze.parameters()},
-    ]
+        {"params": tmfr_out_layer_norm.parameters()},
+    ],
 )
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 5.0, gamma=0.95)
 
+
+db_optim = AdamW(static_model.parameters(), lr=1e-5)
 
 tfmr_dec.train().to(device)
 tfmr_enc.train().to(device)
+bert_squeeze_layer_norm.train()
+act_emb_layer_norm.train()
+static_model.train()
 
 i = 0
 epochs = 15  # 30 seems enough to memorize this toy set
-# TODO: static data does not seem to make a difference in model differentiating tx0/ty0, and about 40 epochs loss plataeus
-from tqdm import tqdm
-update_increment = 10
+
+update_increment = 1
+log_interval = 200
 for i in range(epochs):
 
     print(i)
-    tgt_loss = 0.0
+    total_loss = 0.0
     data_gen = gen_inp_data_set(seq_data_trn, static_data_trn)
 
     counter = 0
-    for data, tgt, static_data in tqdm(data_gen, total=len(seq_data_trn),position=0, leave=True):
+    for data, tgt, static_data in tqdm(
+        data_gen, total=len(seq_data_trn), position=0, leave=True
+    ):
 
         static_tok_output = tokenizer(
             static_data.tolist(), padding=True, truncation=True, return_tensors="pt"
         ).to(device)
         em_st_src = static_model(**static_tok_output)[0].mean(1).unsqueeze(0)
         em_st_src = bertsqueeze(em_st_src)
+        em_st_src = bert_squeeze_layer_norm(em_st_src)
 
         emb_type = te(data[..., 0])
         emb_subtype = ste(data[..., 1])
@@ -177,6 +203,7 @@ for i in range(epochs):
 
         # concat activity category vectors together in last dimension
         dt_src = torch.cat([emb_type, emb_subtype, emb_lvl, emb_rspgrp], dim=2)
+        dt_src = act_emb_layer_norm(dt_src)
 
         # mask any future sequences so attention will not use them
         mask = (torch.triu(torch.ones(20, 20)) == 1).transpose(0, 1).to(device)
@@ -187,10 +214,11 @@ for i in range(epochs):
         ).to(device)
 
         # process static data
-        tfmr_enc_out = tfmr_enc.forward(em_st_src)
+        #tfmr_enc_out = tfmr_enc.forward(em_st_src)
 
         # forward pass main transfomer
-        tfmr_out = tfmr_dec.forward(dt_src, memory=tfmr_enc_out, tgt_mask=mask)
+        tfmr_out = tfmr_dec.forward(dt_src, memory=em_st_src, tgt_mask=mask)
+        tfmr_out = tmfr_out_layer_norm(tfmr_out)
 
         # get class probs of activity elements
         tclsprb = tc.forward(tfmr_out)
@@ -198,29 +226,70 @@ for i in range(epochs):
         lclsprb = ltc.forward(tfmr_out)
         rspgrpsprb = rspgrpc.forward(tfmr_out)
 
-        tclsprb = tclsprb.reshape(tclsprb.numel()//num_type_tokens, num_type_tokens)
-        stclsprb = stclsprb.reshape(stclsprb.numel()//num_subtype_tokens, num_subtype_tokens)
-        lclsprb = lclsprb.reshape(lclsprb.numel()//num_lvl_tokens, num_lvl_tokens)
-        rspgrpsprb = rspgrpsprb.reshape(rspgrpsprb.numel()//num_rspgrp_tokens, num_rspgrp_tokens)
+        tclsprb = tclsprb.reshape(tclsprb.numel() // num_type_tokens, num_type_tokens)
+        stclsprb = stclsprb.reshape(
+            stclsprb.numel() // num_subtype_tokens, num_subtype_tokens
+        )
+        lclsprb = lclsprb.reshape(lclsprb.numel() // num_lvl_tokens, num_lvl_tokens)
+        rspgrpsprb = rspgrpsprb.reshape(
+            rspgrpsprb.numel() // num_rspgrp_tokens, num_rspgrp_tokens
+        )
 
-        tgt_loss += crit(tclsprb, tgt[..., 0].flatten())
+        tgt_loss = crit(tclsprb, tgt[..., 0].flatten())
         tgt_loss += crit(stclsprb, tgt[..., 1].flatten())
         tgt_loss += crit(lclsprb, tgt[..., 2].flatten())
         tgt_loss += crit(rspgrpsprb, tgt[..., 2].flatten())
 
-        # tgt_loss.backward()
-        # optimizer.step()
-        counter += 1
-        if counter % update_increment == 0:
-            tgt_loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            print((tgt_loss / update_increment) / batch_sz)
-            tgt_loss = 0.0
-        if counter % 100 ==0:
-            print(tclsprb.argmax(dim=-1), stclsprb.argmax(dim=-1), lclsprb.argmax(dim=-1))
+        tgt_loss.backward()
+        # _=torch.nn.utils.clip_grad_norm_(
+        #     list(
+        #         itertools.chain.from_iterable(
+        #             [
+        #                 list(i)
+        #                 for i in [
+        #                     tc.parameters(),
+        #                     stc.parameters(),
+        #                     ltc.parameters(),
+        #                     tfmr_dec.parameters(),
+        #                     te.parameters(),
+        #                     ste.parameters(),
+        #                     le.parameters(),
+        #                     act_emb_layer_norm.parameters(),
+        #                     tfmr_enc.parameters(),
+        #                     rspgrpe.parameters(),
+        #                     rspgrpc.parameters(),
+        #                     bert_squeeze_layer_norm.parameters(),
+        #                     bertsqueeze.parameters(),
+        #                     tmfr_out_layer_norm.parameters(),
+        #                 ]
+        #             ]
+        #         )
+        #     ),
+        #     0.5,
+        # )
+        optimizer.step()
+        db_optim.step()
+        optimizer.zero_grad()
+        total_loss += tgt_loss
+
+        if counter % log_interval == 0:
+            print(f"Epoch: {i}")
+            print(f"LR: {scheduler.get_lr()[0]}")
+            print(f"Loss: {(total_loss / log_interval)}")
+            total_loss = 0.0
+
+        if counter % log_interval * 5 == 0:
+            print(
+                tclsprb.argmax(dim=-1),
+                stclsprb.argmax(dim=-1),
+                lclsprb.argmax(dim=-1),
+                rspgrpsprb.argmax(dim=-1),
+            )
             print(tgt)
 
+        counter += 1
+
+    scheduler.step()
 
 # turn on eval
 tfmr_dec.eval().to(device)
@@ -263,4 +332,3 @@ with torch.no_grad():
     print(tgt_loss)
     print(tclsprb.argmax(dim=-1), stclsprb.argmax(dim=-1), lclsprb.argmax(dim=-1))
     print(tgt)
-
