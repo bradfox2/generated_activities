@@ -141,8 +141,26 @@ tokenizer = DistilBertTokenizer.from_pretrained(
 )
 bert_squeeze_layer_norm = nn.LayerNorm(400).to(device)
 
+t_pad_index = TYPE.vocab.stoi['<pad>']
+t_loss_weight = torch.ones(num_type_tokens)
+t_loss_weight[t_pad_index] = 0
 
-crit = nn.CrossEntropyLoss().to(device)
+st_pad_index = SUBTYPE.vocab.stoi['<pad>']
+st_loss_weight = torch.ones(num_subtype_tokens)
+st_loss_weight[st_pad_index] = 0
+
+l_pad_index = TYPE.vocab.stoi['<pad>']
+l_loss_weight = torch.ones(num_lvl_tokens)
+l_loss_weight[l_pad_index] = 0
+
+rg_pad_index = TYPE.vocab.stoi['<pad>']
+rg_loss_weight = torch.ones(num_rspgrp_tokens)
+rg_loss_weight[rg_pad_index] = 0
+
+t_crit = nn.CrossEntropyLoss(ignore_index=t_pad_index).to(device)
+st_crit = nn.CrossEntropyLoss(ignore_index=st_pad_index).to(device)
+l_crit = nn.CrossEntropyLoss(ignore_index=l_pad_index).to(device)
+rg_crit = nn.CrossEntropyLoss(ignore_index=rg_pad_index).to(device)
 optimizer = torch.optim.AdamW(
     [
         {"params": tc.parameters()},
@@ -218,10 +236,10 @@ for i in range(epochs):
         tgt_key_padding_mask = data == 3
         tgt_key_padding_mask = tgt_key_padding_mask.permute(1, 0, 2)[:, :, 0]
         # tgt_key_padding_mask = (
-        #     tgt_key_padding_mask.float()
-        #     .masked_fill(tgt_key_padding_mask == 0, float("-inf"))
-        #     .masked_fill(tgt_key_padding_mask == 1, float(0.0))
-        # ).permute(1,0,2).to(device)
+        #      tgt_key_padding_mask.float()
+        #      .masked_fill(tgt_key_padding_mask == 0, float("-inf"))
+        #      .masked_fill(tgt_key_padding_mask == 1, float(0.0))
+        # ).to(device)
 
         # process static data
         tfmr_enc_out = tfmr_enc.forward(em_st_src)
@@ -249,10 +267,10 @@ for i in range(epochs):
             rspgrpsprb.numel() // num_rspgrp_tokens, num_rspgrp_tokens
         )
 
-        tgt_loss = crit(tclsprb, tgt[..., 0].flatten())
-        tgt_loss += crit(stclsprb, tgt[..., 1].flatten())
-        tgt_loss += crit(lclsprb, tgt[..., 2].flatten())
-        tgt_loss += crit(rspgrpsprb, tgt[..., 2].flatten())
+        tgt_loss = t_crit(tclsprb, tgt[..., 0].flatten())
+        tgt_loss += st_crit(stclsprb, tgt[..., 1].flatten())
+        tgt_loss += l_crit(lclsprb, tgt[..., 2].flatten())
+        tgt_loss += rg_crit(rspgrpsprb, tgt[..., 2].flatten())
         tgt_loss.backward()
         # _=torch.nn.utils.clip_grad_norm_(
         #     list(
