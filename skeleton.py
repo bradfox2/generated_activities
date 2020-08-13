@@ -5,6 +5,7 @@ ie. ['sos','sos'] -> ['t1', 's1'] where t and s are from different categorical s
 but where value of  s1 is dependent on t1
 """
 
+from typing import Type
 import numpy as np
 import torch
 import torch.nn as nn
@@ -141,21 +142,26 @@ tokenizer = DistilBertTokenizer.from_pretrained(
 )
 bert_squeeze_layer_norm = nn.LayerNorm(400).to(device)
 
-t_pad_index = TYPE.vocab.stoi['<pad>']
+t_pad_index = TYPE.vocab.stoi["<pad>"]
+t_eos_index = TYPE.vocab.stoi["<eos>"]
 t_loss_weight = torch.ones(num_type_tokens)
-t_loss_weight[t_pad_index] = 0
+t_loss_weight[t_eos_index] = 1 / num_type_tokens
 
-st_pad_index = SUBTYPE.vocab.stoi['<pad>']
+st_pad_index = SUBTYPE.vocab.stoi["<pad>"]
+st_eos_index = TYPE.vocab.stoi["<eos>"]
 st_loss_weight = torch.ones(num_subtype_tokens)
-st_loss_weight[st_pad_index] = 0
+st_loss_weight[t_eos_index] = 1 / num_subtype_tokens
 
-l_pad_index = TYPE.vocab.stoi['<pad>']
+l_pad_index = TYPE.vocab.stoi["<pad>"]
+l_eos_index = TYPE.vocab.stoi["<eos>"]
 l_loss_weight = torch.ones(num_lvl_tokens)
-l_loss_weight[l_pad_index] = 0
+l_loss_weight[t_eos_index] = 1 / num_lvl_tokens
 
-rg_pad_index = TYPE.vocab.stoi['<pad>']
+rg_pad_index = TYPE.vocab.stoi["<pad>"]
+rg_eos_index = TYPE.vocab.stoi["<eos>"]
 rg_loss_weight = torch.ones(num_rspgrp_tokens)
-rg_loss_weight[rg_pad_index] = 0
+rg_loss_weight[t_eos_index] = 1 / num_rspgrp_tokens
+
 
 t_crit = nn.CrossEntropyLoss(ignore_index=t_pad_index).to(device)
 st_crit = nn.CrossEntropyLoss(ignore_index=st_pad_index).to(device)
@@ -301,6 +307,7 @@ for i in range(epochs):
         optimizer.step()
         db_optim.step()
         optimizer.zero_grad()
+        print(tgt_loss)
 
         total_loss += tgt_loss
 
