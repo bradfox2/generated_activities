@@ -1,3 +1,7 @@
 settings.json
-*/*staged_activities.csv
 *.pyc
+*.csv
+env
+.vscode
+__pycache__
+distilbert_weights

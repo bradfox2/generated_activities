@@ -144,10 +144,10 @@ def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data):
     tokenizer = DistilBertTokenizer.from_pretrained(
         "distilbert-base-uncased", return_tensors="pt", pad_token="<pad>"
     )
-    numer_trn_static_data = trn_static_data["DESCR"]  # .apply(
+    numer_trn_static_data = trn_static_data["DESCR"].fillna('<unk>')  # .apply(
     # lambda x: tokenizer.encode(x[:512])
     # )
-    numer_tst_static_data = tst_static_data["DESCR"]  # .apply(
+    numer_tst_static_data = tst_static_data["DESCR"].fillna('<unk>')  # .apply(
     # lambda x: tokenizer.encode(x[:512])
     # )
 

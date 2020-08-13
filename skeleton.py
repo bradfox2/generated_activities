@@ -5,15 +5,13 @@ ie. ['sos','sos'] -> ['t1', 's1'] where t and s are from different categorical s
 but where value of  s1 is dependent on t1
 """
 
-from typing import List
-
 import numpy as np
 import pandas
 import torch
 import torch.nn as nn
 from transformers import DistilBertModel, DistilBertTokenizer
 
-from act_mod.data_processing import (
+from data_processing import (
     LVL,
     RESPGROUP,
     SUBTYPE,
@@ -22,7 +20,7 @@ from act_mod.data_processing import (
     process,
     truncate_series_by_len,
 )
-from act_mod.load_staged_acts import get_dat_data
+from load_staged_acts import get_dat_data
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -59,7 +57,7 @@ assert numer_trn_act_seqs.index[0] == numer_trn_static_data.index[0]
 
 max_len = 21
 num_act_cats = 4
-batch_sz = 2
+batch_sz = 4
 trunc_numer_trn_act_seqs = truncate_series_by_len(numer_trn_act_seqs, max_len)
 padded_numer_trn_act_seqs = pad_series_to_max_len(
     trunc_numer_trn_act_seqs, pad_token=2, pad_len=max_len
@@ -86,9 +84,7 @@ def batchify_static_data(static_data, batch_sz):
     n = np.concatenate(np.vsplit(n, batch_sz), 1)
     return n
 
-
-static_data_trn = batchify_static_data(numer_trn_static_data, batch_sz)
-
+static_data_trn = batchify_static_data(numer_trn_static_data[:seq_data_trn.shape[0]*batch_sz], batch_sz)
 
 def gen_inp_data_set(seq_data: torch.Tensor, static_data: np.array):
     """generator that advances through the crs dimension, 
@@ -110,7 +106,6 @@ num_attn_heads = 4
 num_dec_layers = 4
 # dims (mini_batch(batch_sz) x bptt x act_cats)
 bptt = 20  # num lagged activities
-batch_sz = 2  # num crs in mini batch
 
 te = nn.Embedding(num_type_tokens, emb_dim).to(device)
 ste = nn.Embedding(num_subtype_tokens, emb_dim).to(device)
@@ -129,7 +124,7 @@ ltc = nn.Linear(embedding_dim_into_tran, num_lvl_tokens).to(device)
 rspgrpc = nn.Linear(embedding_dim_into_tran, num_rspgrp_tokens).to(device)
 
 bertsqueeze = nn.Linear(768, 400).to(device)
-static_model = DistilBertModel.from_pretrained("distilbert-base-uncased").to(device)
+static_model = DistilBertModel.from_pretrained("./distilbert_weights/").to(device)
 tokenizer = DistilBertTokenizer.from_pretrained(
     "distilbert-base-uncased", return_tensors="pt"
 )
@@ -158,6 +153,8 @@ tfmr_enc.train().to(device)
 i = 0
 epochs = 15  # 30 seems enough to memorize this toy set
 # TODO: static data does not seem to make a difference in model differentiating tx0/ty0, and about 40 epochs loss plataeus
+from tqdm import tqdm
+update_increment = 10
 for i in range(epochs):
 
     print(i)
@@ -165,7 +162,7 @@ for i in range(epochs):
     data_gen = gen_inp_data_set(seq_data_trn, static_data_trn)
 
     counter = 0
-    for data, tgt, static_data in data_gen:
+    for data, tgt, static_data in tqdm(data_gen, total=len(seq_data_trn),position=0, leave=True):
 
         static_tok_output = tokenizer(
             static_data.tolist(), padding=True, truncation=True, return_tensors="pt"
@@ -201,10 +198,10 @@ for i in range(epochs):
         lclsprb = ltc.forward(tfmr_out)
         rspgrpsprb = rspgrpc.forward(tfmr_out)
 
-        tclsprb = tclsprb.reshape(40, num_type_tokens)
-        stclsprb = stclsprb.reshape(40, num_subtype_tokens)
-        lclsprb = lclsprb.reshape(40, num_lvl_tokens)
-        rspgrpsprb = rspgrpsprb.reshape(40, num_rspgrp_tokens)
+        tclsprb = tclsprb.reshape(tclsprb.numel()//num_type_tokens, num_type_tokens)
+        stclsprb = stclsprb.reshape(stclsprb.numel()//num_subtype_tokens, num_subtype_tokens)
+        lclsprb = lclsprb.reshape(lclsprb.numel()//num_lvl_tokens, num_lvl_tokens)
+        rspgrpsprb = rspgrpsprb.reshape(rspgrpsprb.numel()//num_rspgrp_tokens, num_rspgrp_tokens)
 
         tgt_loss += crit(tclsprb, tgt[..., 0].flatten())
         tgt_loss += crit(stclsprb, tgt[..., 1].flatten())
@@ -214,12 +211,15 @@ for i in range(epochs):
         # tgt_loss.backward()
         # optimizer.step()
         counter += 1
-        if counter % 10 == 0:
+        if counter % update_increment == 0:
             tgt_loss.backward()
             optimizer.step()
             optimizer.zero_grad()
-            print(tgt_loss / 10)
+            print((tgt_loss / update_increment) / batch_sz)
             tgt_loss = 0.0
+        if counter % 100 ==0:
+            print(tclsprb.argmax(dim=-1), stclsprb.argmax(dim=-1), lclsprb.argmax(dim=-1))
+            print(tgt)
 
 
 # turn on eval
