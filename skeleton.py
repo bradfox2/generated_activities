@@ -5,8 +5,6 @@ ie. ['sos','sos'] -> ['t1', 's1'] where t and s are from different categorical s
 but where value of  s1 is dependent on t1
 """
 
-import itertools
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -47,23 +45,26 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # ]
 
 trnseq, tstseq, trnstat, tststat = get_dat_data()
+
+ # length of sequence of staged activities, first and last will be sos and eos tokens, resepectively.  any remaining staged activity spaces will be padded with <unk>
+sequence_length = 5
+
 (
     numer_trn_act_seqs,
     numer_tst_act_seqs,
     numer_trn_static_data,
     numer_tst_static_data,
-) = process(trnseq, trnstat, tstseq, tststat)
+) = process(trnseq, trnstat, tstseq, tststat, sequence_length)
 
 assert len(numer_trn_act_seqs) == len(numer_trn_static_data)
 assert numer_trn_act_seqs.index[0] == numer_trn_static_data.index[0]
 
-sequence_length = 5
 # add one to account for target shifting
 max_len = sequence_length + 1
 num_act_cats = 4
-batch_sz = 4
-trunc_numer_trn_act_seqs = truncate_series_by_len(numer_trn_act_seqs, max_len)
+batch_sz = 8
 
+trunc_numer_trn_act_seqs = truncate_series_by_len(numer_trn_act_seqs, max_len)
 padded_numer_trn_act_seqs = pad_series_to_max_len(
     trunc_numer_trn_act_seqs, pad_token=2, pad_len=max_len
 )
@@ -110,11 +111,11 @@ num_lvl_tokens = len(LVL.vocab.itos)
 num_rspgrp_tokens = len(RESPGROUP.vocab.itos)
 
 emb_dim = 100
-embedding_dim_into_tran = 400
-num_attn_heads = 4
-num_dec_layers = 4
+embedding_dim_into_tran = emb_dim * num_act_cats
+num_attn_heads = 2
+num_dec_layers = 2
 # dims (mini_batch(batch_sz) x bptt x act_cats)
-bptt = sequence_length  # num lagged activities
+bptt = sequence_length  # sequence of activities of cr
 
 te = nn.Embedding(num_type_tokens, emb_dim).to(device)
 ste = nn.Embedding(num_subtype_tokens, emb_dim).to(device)
@@ -127,8 +128,8 @@ tfmr_dec_l = nn.TransformerDecoderLayer(embedding_dim_into_tran, num_attn_heads)
     device
 )
 tfmr_dec = nn.TransformerDecoder(tfmr_dec_l, num_dec_layers).to(device)
-# tfmr_enc_l = nn.TransformerEncoderLayer(400, 1).to(device)
-# tfmr_enc = nn.TransformerEncoder(tfmr_enc_l, 1).to(device)
+tfmr_enc_l = nn.TransformerEncoderLayer(400, 1).to(device)
+tfmr_enc = nn.TransformerEncoder(tfmr_enc_l, 1).to(device)
 tc = nn.Linear(embedding_dim_into_tran, num_type_tokens).to(device)
 stc = nn.Linear(embedding_dim_into_tran, num_subtype_tokens).to(device)
 ltc = nn.Linear(embedding_dim_into_tran, num_lvl_tokens).to(device)
@@ -155,13 +156,14 @@ optimizer = torch.optim.AdamW(
         {"params": ste.parameters()},
         {"params": le.parameters()},
         {"params": act_emb_layer_norm.parameters()},
-        # {"params": tfmr_enc.parameters()},
+        {"params": tfmr_enc.parameters()},
         {"params": rspgrpe.parameters()},
         {"params": rspgrpc.parameters()},
         {"params": bert_squeeze_layer_norm.parameters()},
         {"params": bertsqueeze.parameters()},
-        {"params": tmfr_out_layer_norm.parameters()},
+        # {"params": tmfr_out_layer_norm.parameters()},
     ],
+    lr=0.1,
 )
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 5.0, gamma=0.95)
 
@@ -169,13 +171,13 @@ scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 5.0, gamma=0.95)
 db_optim = AdamW(static_model.parameters(), lr=1e-5)
 
 tfmr_dec.train().to(device)
-# tfmr_enc.train().to(device)
+tfmr_enc.train().to(device)
 bert_squeeze_layer_norm.train()
 act_emb_layer_norm.train()
 static_model.train()
 
 i = 0
-epochs = 15  # 30 seems enough to memorize this toy set
+epochs = 15
 
 update_increment = 1
 log_interval = 200
@@ -186,6 +188,7 @@ for i in range(epochs):
     data_gen = gen_inp_data_set(seq_data_trn, static_data_trn)
 
     counter = 0
+    #data, tgt, static_data = next(data_gen)
     for data, tgt, static_data in tqdm(
         data_gen, total=len(seq_data_trn), position=0, leave=True
     ):
@@ -215,11 +218,10 @@ for i in range(epochs):
         ).to(device)
 
         # process static data
-        # tfmr_enc_out = tfmr_enc.forward(em_st_src)
+        tfmr_enc_out = tfmr_enc.forward(em_st_src)
 
         # forward pass main transfomer
-        tfmr_out = tfmr_dec.forward(dt_src, memory=em_st_src, tgt_mask=mask)
-        tfmr_out = tmfr_out_layer_norm(tfmr_out)
+        tfmr_out = tfmr_dec.forward(dt_src, memory=tfmr_enc_out, tgt_mask=mask)
 
         # get class probs of activity elements
         tclsprb = tc.forward(tfmr_out)
@@ -240,7 +242,7 @@ for i in range(epochs):
         tgt_loss += crit(stclsprb, tgt[..., 1].flatten())
         tgt_loss += crit(lclsprb, tgt[..., 2].flatten())
         tgt_loss += crit(rspgrpsprb, tgt[..., 2].flatten())
-
+        print(tgt_loss)
         tgt_loss.backward()
         # _=torch.nn.utils.clip_grad_norm_(
         #     list(

@@ -1,7 +1,5 @@
 """example code of how we might tokenize individual categorial variables"""
 
-from typing import Any, List
-
 import pandas
 import torchtext
 
@@ -61,14 +59,14 @@ a = [[0, 0, 0, 0]]
 assert pad(a, 2, 1, 4) == [[0, 0, 0, 0], [1, 1, 1, 1]]
 
 
-def pad_series_to_max_len(series: pandas.Series, pad_token: int = 2, pad_len: int = 21):
+def pad_series_to_max_len(series: pandas.Series, pad_token, pad_len):
     num_fields_to_pad = (
         len(series[0][0]) if not series.empty and len(series[0]) >= 1 else 1
     )
     return series.apply(lambda x: pad(x, pad_len, pad_token, num_fields_to_pad))
 
 
-def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data):
+def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data, max_len):
     TYPE.build_vocab(
         [
             [act[0] for act in actlist if not pandas.isna(act[0])]
@@ -96,7 +94,7 @@ def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data):
 
     # add sequencing indicator tokens and numericalize
 
-    def add_start_stop_and_numericalize(act_seq):
+    def add_start_stop_and_numericalize_and_pad(act_seq, max_len):
         if pandas.isna(act_seq[0][0]):
             return [
                 [
@@ -116,6 +114,7 @@ def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data):
         else:
             act_seq.insert(0, [init_token] * len(act_seq[0]))
             act_seq.append([eos_token] * len(act_seq[0]))
+            act_seq.extend([[pad_token] * 4] * (max_len - len(act_seq)))
             return [
                 [
                     TYPE.vocab.stoi[act[0]],
@@ -126,11 +125,20 @@ def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data):
                 for act in act_seq
             ]
 
-    numer_trn_act_seqs = trn_act_seqs.apply(add_start_stop_and_numericalize)
+    trn_act_seqs = truncate_series_by_len(
+        trn_act_seqs, max_len - 2
+    )  # leave 2 spaces for sos and eos tokens
+    tst_act_seqs = truncate_series_by_len(tst_act_seqs, max_len - 2)
+
+    numer_trn_act_seqs = trn_act_seqs.apply(
+        add_start_stop_and_numericalize_and_pad, args=(max_len,)
+    )
     shuffled_num_seqs_trn = trn_act_seqs.apply(len).sample(frac=1).index
     numer_trn_act_seqs = numer_trn_act_seqs.reindex(shuffled_num_seqs_trn)
 
-    numer_tst_act_seqs = tst_act_seqs.apply(add_start_stop_and_numericalize)
+    numer_tst_act_seqs = tst_act_seqs.apply(
+        add_start_stop_and_numericalize_and_pad, args=(max_len,)
+    )
     shuffled_num_seqs_tst = tst_act_seqs.apply(len).sample(frac=1).index
     numer_tst_act_seqs = numer_tst_act_seqs.reindex(shuffled_num_seqs_tst)
 
@@ -140,10 +148,10 @@ def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data):
     # tokenizer = LongformerTokenizer.from_pretrained("allenai/longformer-base-4096")
     # numer_trn_static_data = trn_static_data["DESCR"].apply(tokenizer.encode)
     # numer_tst_static_data = tst_static_data["DESCR"].apply(tokenizer.encode)
+    # tokenizer = DistilBertTokenizer.from_pretrained(
+    #     "distilbert-base-uncased", return_tensors="pt", pad_token="<pad>"
+    # )
 
-    tokenizer = DistilBertTokenizer.from_pretrained(
-        "distilbert-base-uncased", return_tensors="pt", pad_token="<pad>"
-    )
     numer_trn_static_data = trn_static_data["DESCR"].fillna("<unk>")  # .apply(
     # lambda x: tokenizer.encode(x[:512])
     # )

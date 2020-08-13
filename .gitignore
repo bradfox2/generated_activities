@@ -4,4 +4,4 @@ settings.json
 env
 .vscode
 __pycache__
-distilbert_weights
+distilbert_weights/*
