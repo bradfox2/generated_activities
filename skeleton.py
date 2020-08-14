@@ -284,7 +284,7 @@ for i in range(epochs):
         tgt_loss = t_crit(tclsprb, tgt[..., 0].flatten())
         tgt_loss += st_crit(stclsprb, tgt[..., 1].flatten())
         tgt_loss += l_crit(lclsprb, tgt[..., 2].flatten())
-        tgt_loss += rg_crit(rspgrpsprb, tgt[..., 2].flatten())
+        tgt_loss += rg_crit(rspgrpsprb, tgt[..., 3].flatten())
         tgt_loss.backward()
         # _ = torch.nn.utils.clip_grad_norm_(
         #     list(
