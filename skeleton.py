@@ -65,7 +65,7 @@ assert numer_trn_act_seqs.index[0] == numer_trn_static_data.index[0]
 # add one to account for target shifting
 max_len = sequence_length + 1
 num_act_cats = 4
-batch_sz = 8
+batch_sz = 16
 
 
 def batchify_act_seqs(data, batch_sz):
@@ -110,8 +110,8 @@ num_rspgrp_tokens = len(RESPGROUP.vocab.itos)
 
 emb_dim = 100
 embedding_dim_into_tran = emb_dim * num_act_cats
-num_attn_heads = 2
-num_dec_layers = 2
+num_attn_heads = 8
+num_dec_layers = 8
 # dims (mini_batch(batch_sz) x bptt x act_cats)
 bptt = sequence_length  # sequence of activities of cr
 
@@ -369,5 +369,10 @@ with torch.no_grad():
     tgt_loss += crit(lclsprb, tgt[..., 2].flatten())
 
     print(tgt_loss)
-    print(tclsprb.argmax(dim=-1), stclsprb.argmax(dim=-1), lclsprb.argmax(dim=-1))
+    print(
+        tclsprb.argmax(dim=-1),
+        stclsprb.argmax(dim=-1),
+        lclsprb.argmax(dim=-1),
+        rspgrpsprb.argmax(dim=-1),
+    )
     print(tgt)
