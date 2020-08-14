@@ -5,7 +5,10 @@ ie. ['sos','sos'] -> ['t1', 's1'] where t and s are from different categorical s
 but where value of  s1 is dependent on t1
 """
 
+import itertools
+from operator import lt
 from typing import Type
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -17,9 +20,7 @@ from data_processing import (
     RESPGROUP,
     SUBTYPE,
     TYPE,
-    pad_series_to_max_len,
     process,
-    truncate_series_by_len,
 )
 from load_staged_acts import get_dat_data
 
@@ -79,7 +80,7 @@ def batchify_act_seqs(data, batch_sz):
     return torch.cat(chunks, dim=2).to(device)
 
 
-seq_data_trn = batchify_act_seqs(numer_trn_act_seqs, batch_sz).to(device)
+seq_data_trn = batchify_act_seqs(numer_trn_act_seqs, batch_sz).contiguous().to(device)
 
 
 def batchify_static_data(static_data, batch_sz):
@@ -110,8 +111,8 @@ num_rspgrp_tokens = len(RESPGROUP.vocab.itos)
 
 emb_dim = 100
 embedding_dim_into_tran = emb_dim * num_act_cats
-num_attn_heads = 8
-num_dec_layers = 8
+num_attn_heads = 4
+num_dec_layers = 4
 # dims (mini_batch(batch_sz) x bptt x act_cats)
 bptt = sequence_length  # sequence of activities of cr
 
@@ -126,16 +127,31 @@ tfmr_dec_l = nn.TransformerDecoderLayer(embedding_dim_into_tran, num_attn_heads)
     device
 )
 tfmr_dec = nn.TransformerDecoder(tfmr_dec_l, num_dec_layers).to(device)
-tfmr_enc_l = nn.TransformerEncoderLayer(400, 1).to(device)
-tfmr_enc = nn.TransformerEncoder(tfmr_enc_l, 1).to(device)
+# tfmr_enc_l = nn.TransformerEncoderLayer(400, 1).to(device)
+# tfmr_enc = nn.TransformerEncoder(tfmr_enc_l, 1).to(device)
 drop_layer = nn.Dropout(0.2).to(device)
 tc = nn.Linear(embedding_dim_into_tran, num_type_tokens).to(device)
 stc = nn.Linear(embedding_dim_into_tran, num_subtype_tokens).to(device)
 ltc = nn.Linear(embedding_dim_into_tran, num_lvl_tokens).to(device)
-rspgrp_dense = nn.Linear(embedding_dim_into_tran, embedding_dim_into_tran).to(device)
+# rspgrp_dense = nn.Linear(embedding_dim_into_tran, embedding_dim_into_tran).to(device)
 rspgrpc = nn.Linear(embedding_dim_into_tran, num_rspgrp_tokens).to(device)
 
 tmfr_out_layer_norm = nn.LayerNorm(400).to(device)
+
+# TODO: Weight initialization
+initrange = 0.1
+te.weight.data.uniform_(-initrange, initrange)
+ste.weight.data.uniform_(-initrange, initrange)
+le.weight.data.uniform_(-initrange, initrange)
+rspgrpe.weight.data.uniform_(-initrange, initrange)
+tc.weight.data.uniform_(-initrange, initrange)
+tc.bias.data.zero_()
+stc.weight.data.uniform_(-initrange, initrange)
+tc.bias.data.zero_()
+ltc.weight.data.uniform_(-initrange, initrange)
+ltc.bias.data.zero_()
+rspgrpc.weight.data.uniform_(-initrange, initrange)
+rspgrpc.bias.data.zero_()
 
 
 bertsqueeze = nn.Linear(768, 400).to(device)
@@ -180,12 +196,11 @@ optimizer = torch.optim.AdamW(
         {"params": ste.parameters()},
         {"params": le.parameters()},
         {"params": act_emb_layer_norm.parameters()},
-        {"params": tfmr_enc.parameters()},
+        # {"params": tfmr_enc.parameters()},
         {"params": rspgrpe.parameters()},
         {"params": rspgrpc.parameters()},
         {"params": bert_squeeze_layer_norm.parameters()},
         {"params": bertsqueeze.parameters()},
-        # {"params": tmfr_out_layer_norm.parameters()},
     ],
 )
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 5.0, gamma=0.95)
@@ -193,10 +208,11 @@ scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 5.0, gamma=0.95)
 db_optim = AdamW(static_model.parameters(), lr=1e-5)
 
 tfmr_dec.train().to(device)
-tfmr_enc.train().to(device)
+# tfmr_enc.train().to(device)
 bert_squeeze_layer_norm.train()
 act_emb_layer_norm.train()
 static_model.train()
+drop_layer.train()
 
 i = 0
 epochs = 100
@@ -241,35 +257,29 @@ for i in range(epochs):
         ).to(device)
 
         # tgt_key_padding_mask dims = (batch_sz x seq_length)
-
-        tgt_key_padding_mask = data == 3
+        tgt_key_padding_mask = data == 3  # 3 is our pad tok
         tgt_key_padding_mask = tgt_key_padding_mask.permute(1, 0, 2)[:, :, 0]
-        # tgt_key_padding_mask = (
-        #      tgt_key_padding_mask.float()
-        #      .masked_fill(tgt_key_padding_mask == 0, float("-inf"))
-        #      .masked_fill(tgt_key_padding_mask == 1, float(0.0))
-        # ).to(device)
 
         # process static data
-        tfmr_enc_out = tfmr_enc.forward(em_st_src)
+        # tfmr_enc_out = tfmr_enc.forward(em_st_src)
 
         # forward pass main transfomer
         tfmr_out = tfmr_dec.forward(
             dt_src,
-            memory=tfmr_enc_out,
+            memory=em_st_src,
             tgt_mask=tgt_mask,
             tgt_key_padding_mask=tgt_key_padding_mask,
         )
 
         # get class probs of activity elements
-        tfmr_out = drop_layer(tfmr_out)
+        # tfmr_out = drop_layer(tfmr_out)
         tclsprb = tc.forward(tfmr_out)
         stclsprb = stc.forward(tfmr_out)
         lclsprb = ltc.forward(tfmr_out)
-        rsgp_dense_x = rspgrp_dense(tfmr_out)
-        rsgp_dense_x = torch.tanh(rsgp_dense_x)
-        rsgp_dense_x = drop_layer(rsgp_dense_x)
-        rspgrpsprb = rspgrpc.forward(tfmr_out)
+        # rsgp_dense_x = rspgrp_dense(tfmr_out)
+        # rsgp_dense_x = torch.tanh(rsgp_dense_x)
+        # rsgp_dense_x = drop_layer(rsgp_dense_x)
+        rspgrpsprb = rspgrpc(tfmr_out)
 
         tclsprb = tclsprb.reshape(tclsprb.numel() // num_type_tokens, num_type_tokens)
         stclsprb = stclsprb.reshape(
@@ -285,36 +295,35 @@ for i in range(epochs):
         tgt_loss += l_crit(lclsprb, tgt[..., 2].flatten())
         tgt_loss += rg_crit(rspgrpsprb, tgt[..., 2].flatten())
         tgt_loss.backward()
-        # _=torch.nn.utils.clip_grad_norm_(
-        #     list(
-        #         itertools.chain.from_iterable(
-        #             [
-        #                 list(i)
-        #                 for i in [
-        #                     tc.parameters(),
-        #                     stc.parameters(),
-        #                     ltc.parameters(),
-        #                     tfmr_dec.parameters(),
-        #                     te.parameters(),
-        #                     ste.parameters(),
-        #                     le.parameters(),
-        #                     act_emb_layer_norm.parameters(),
-        #                     tfmr_enc.parameters(),
-        #                     rspgrpe.parameters(),
-        #                     rspgrpc.parameters(),
-        #                     bert_squeeze_layer_norm.parameters(),
-        #                     bertsqueeze.parameters(),
-        #                     tmfr_out_layer_norm.parameters(),
-        #                 ]
-        #             ]
-        #         )
-        #     ),
-        #     0.5,
-        # )
+        _ = torch.nn.utils.clip_grad_norm_(
+            list(
+                itertools.chain.from_iterable(
+                    [
+                        list(i)
+                        for i in [
+                            # tc.parameters(),
+                            # stc.parameters(),
+                            # ltc.parameters(),
+                            tfmr_dec.parameters(),
+                            # te.parameters(),
+                            # ste.parameters(),
+                            # le.parameters(),
+                            # act_emb_layer_norm.parameters(),
+                            # tfmr_enc.parameters(),
+                            # rspgrpe.parameters(),
+                            # rspgrpc.parameters(),
+                            # bert_squeeze_layer_norm.parameters(),
+                            # bertsqueeze.parameters(),
+                            # tmfr_out_layer_norm.parameters(),
+                        ]
+                    ]
+                )
+            ),
+            0.5,
+        )
         optimizer.step()
         db_optim.step()
         optimizer.zero_grad()
-        print(tgt_loss)
 
         total_loss += tgt_loss
 
