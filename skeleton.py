@@ -225,10 +225,11 @@ for i in range(epochs):
         ).to(device)
 
         optimizer.zero_grad()
+        db_optim.zero_grad()
 
         em_st_src = static_model(**static_tok_output)[0].mean(1).unsqueeze(0)
-        em_st_src = bertsqueeze(em_st_src)
-        em_st_src = bert_squeeze_layer_norm(em_st_src)
+        em_st_src2 = bertsqueeze.forward(em_st_src)
+        em_st_src3 = bert_squeeze_layer_norm.forward(em_st_src2)
 
         emb_type = te(data[..., 0])
         emb_subtype = ste(data[..., 1])
@@ -237,7 +238,7 @@ for i in range(epochs):
 
         # concat activity category vectors together in last dimension
         dt_src = torch.cat([emb_type, emb_subtype, emb_lvl, emb_rspgrp], dim=2)
-        dt_src = act_emb_layer_norm(dt_src)
+        dt_src2 = act_emb_layer_norm.forward(dt_src)
 
         # mask any future sequences so attention will not use them
         tgt_mask = (torch.triu(torch.ones(bptt, bptt)) == 1).transpose(0, 1).to(device)
@@ -256,8 +257,8 @@ for i in range(epochs):
 
         # forward pass main transfomer
         tfmr_out = tfmr_dec.forward(
-            dt_src,
-            memory=em_st_src,
+            dt_src2,
+            memory=em_st_src3,
             tgt_mask=tgt_mask,
             tgt_key_padding_mask=tgt_key_padding_mask,
         )
@@ -270,21 +271,21 @@ for i in range(epochs):
         # rsgp_dense_x = rspgrp_dense(tfmr_out)
         # rsgp_dense_x = torch.tanh(rsgp_dense_x)
         # rsgp_dense_x = drop_layer(rsgp_dense_x)
-        rspgrpsprb = rspgrpc(tfmr_out)
+        rspgrpsprb = rspgrpc.forward(tfmr_out)
 
-        tclsprb = tclsprb.reshape(tclsprb.numel() // num_type_tokens, num_type_tokens)
-        stclsprb = stclsprb.reshape(
+        tclsprb2 = tclsprb.reshape(tclsprb.numel() // num_type_tokens, num_type_tokens)
+        stclsprb2 = stclsprb.reshape(
             stclsprb.numel() // num_subtype_tokens, num_subtype_tokens
         )
-        lclsprb = lclsprb.reshape(lclsprb.numel() // num_lvl_tokens, num_lvl_tokens)
-        rspgrpsprb = rspgrpsprb.reshape(
+        lclsprb2 = lclsprb.reshape(lclsprb.numel() // num_lvl_tokens, num_lvl_tokens)
+        rspgrpsprb2 = rspgrpsprb.reshape(
             rspgrpsprb.numel() // num_rspgrp_tokens, num_rspgrp_tokens
         )
 
-        tgt_loss = t_crit(tclsprb, tgt[..., 0].flatten())
-        tgt_loss += st_crit(stclsprb, tgt[..., 1].flatten())
-        tgt_loss += l_crit(lclsprb, tgt[..., 2].flatten())
-        tgt_loss += rg_crit(rspgrpsprb, tgt[..., 3].flatten())
+        tgt_loss = t_crit(tclsprb2, tgt[..., 0].flatten())
+        tgt_loss += st_crit(stclsprb2, tgt[..., 1].flatten())
+        tgt_loss += l_crit(lclsprb2, tgt[..., 2].flatten())
+        tgt_loss += rg_crit(rspgrpsprb2, tgt[..., 3].flatten())
         tgt_loss.backward()
         # _ = torch.nn.utils.clip_grad_norm_(
         #     list(
@@ -314,7 +315,7 @@ for i in range(epochs):
         # )
         optimizer.step()
         db_optim.step()
-
+        # print(tgt_loss)
         total_loss += tgt_loss
 
         if counter % log_interval == 0:
