@@ -199,7 +199,7 @@ act_emb_layer_norm.train()
 static_model.train()
 
 i = 0
-epochs = 1
+epochs = 100
 
 update_increment = 1
 log_interval = 200
