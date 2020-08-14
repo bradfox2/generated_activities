@@ -1,4 +1,4 @@
-""" toy example of next sequence prediction at the intra-sequential element level using 
+""" working example of next sequence prediction at the intra-sequential element level using 
 transfomer with sequence level static data
 
 ie. ['sos','sos'] -> ['t1', 's1'] where t and s are from different categorical sets, 
