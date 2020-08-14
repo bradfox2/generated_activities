@@ -128,12 +128,15 @@ tfmr_dec_l = nn.TransformerDecoderLayer(embedding_dim_into_tran, num_attn_heads)
 tfmr_dec = nn.TransformerDecoder(tfmr_dec_l, num_dec_layers).to(device)
 tfmr_enc_l = nn.TransformerEncoderLayer(400, 1).to(device)
 tfmr_enc = nn.TransformerEncoder(tfmr_enc_l, 1).to(device)
+drop_layer = nn.Dropout(0.2).to(device)
 tc = nn.Linear(embedding_dim_into_tran, num_type_tokens).to(device)
 stc = nn.Linear(embedding_dim_into_tran, num_subtype_tokens).to(device)
 ltc = nn.Linear(embedding_dim_into_tran, num_lvl_tokens).to(device)
+rspgrp_dense = nn.Linear(embedding_dim_into_tran, embedding_dim_into_tran).to(device)
 rspgrpc = nn.Linear(embedding_dim_into_tran, num_rspgrp_tokens).to(device)
 
 tmfr_out_layer_norm = nn.LayerNorm(400).to(device)
+
 
 bertsqueeze = nn.Linear(768, 400).to(device)
 static_model = DistilBertModel.from_pretrained("./distilbert_weights/").to(device)
@@ -196,7 +199,7 @@ act_emb_layer_norm.train()
 static_model.train()
 
 i = 0
-epochs = 15
+epochs = 1
 
 update_increment = 1
 log_interval = 200
@@ -259,9 +262,13 @@ for i in range(epochs):
         )
 
         # get class probs of activity elements
+        tfmr_out = drop_layer(tfmr_out)
         tclsprb = tc.forward(tfmr_out)
         stclsprb = stc.forward(tfmr_out)
         lclsprb = ltc.forward(tfmr_out)
+        rsgp_dense_x = rspgrp_dense(tfmr_out)
+        rsgp_dense_x = torch.tanh(rsgp_dense_x)
+        rsgp_dense_x = drop_layer(rsgp_dense_x)
         rspgrpsprb = rspgrpc.forward(tfmr_out)
 
         tclsprb = tclsprb.reshape(tclsprb.numel() // num_type_tokens, num_type_tokens)
@@ -354,10 +361,14 @@ with torch.no_grad():
     dt_src = torch.reshape(dt_src, (1, 2, 400))
     tfmr_out = tfmr_dec(dt_src, memory=em_st_src)
 
+    tfmr_out = drop_layer(tfmr_out)
     tclsprb = tc.forward(tfmr_out)
     stclsprb = stc.forward(tfmr_out)
     lclsprb = ltc.forward(tfmr_out)
-    rspgrpsprb = rspgrpc.forward(tfmr_out)
+    rsgp_dense_x = rspgrp_dense(tfmr_out)
+    rsgp_dense_x = torch.tanh(rsgp_dense_x)
+    rsgp_dense_x = drop_layer(rsgp_dense_x)
+    rspgrpsprb = rspgrpc.forward(rsgp_dense_x)
 
     tclsprb = tclsprb.reshape(2, num_type_tokens)
     stclsprb = stclsprb.reshape(2, num_subtype_tokens)
