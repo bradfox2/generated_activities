@@ -17,6 +17,26 @@ from transformers import AdamW, DistilBertModel, DistilBertTokenizer
 from data_processing import LVL, RESPGROUP, SUBTYPE, TYPE, process
 from load_staged_acts import get_dat_data
 
+
+def field_printer(field, prob_tensor, tgt):
+    print(
+        list(
+            zip(
+                [
+                    field.vocab.itos[i]
+                    for i in prob_tensor.argmax(dim=-1).flatten()
+                    if field.vocab.itos[i] != "<pad>"
+                ],
+                [
+                    field.vocab.itos[i]
+                    for i in tgt.flatten()
+                    if field.vocab.itos[i] != "<pad>"
+                ],
+            )
+        )
+    )
+
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 trnseq, tstseq, trnstat, tststat = get_dat_data()
@@ -39,7 +59,7 @@ assert numer_trn_act_seqs.index[0] == numer_trn_static_data.index[0]
 # add one to account for target shifting
 max_len = sequence_length + 1
 num_act_cats = 4
-batch_sz = 8
+batch_sz = 16
 rec_len = len(trnseq) // batch_sz
 
 
@@ -85,8 +105,8 @@ num_rspgrp_tokens = len(RESPGROUP.vocab.itos)
 
 emb_dim = 100
 embedding_dim_into_tran = emb_dim * num_act_cats
-num_attn_heads = 2
-num_dec_layers = 2
+num_attn_heads = 4
+num_dec_layers = 4
 # dims (mini_batch(batch_sz) x bptt x act_cats)
 bptt = sequence_length  # sequence of activities of cr
 
@@ -129,7 +149,7 @@ rspgrpc.bias.data.zero_()
 
 
 bertsqueeze = nn.Linear(768, 400).to(device)
-static_model = DistilBertModel.from_pretrained("distilbert-base-uncased").to(device)
+static_model = DistilBertModel.from_pretrained("./distilbert_weights/").to(device)
 tokenizer = DistilBertTokenizer.from_pretrained(
     "distilbert-base-uncased", return_tensors="pt"
 )
@@ -326,12 +346,15 @@ for i in range(epochs):
 
         if counter % log_interval * 5 == 0:
             print(
-                tclsprb.argmax(dim=-1),
-                stclsprb.argmax(dim=-1),
-                lclsprb.argmax(dim=-1),
-                rspgrpsprb.argmax(dim=-1),
+                "Type:",
+                field_printer(TYPE, tclsprb, tgt[..., 0]),
+                "ST:",
+                field_printer(SUBTYPE, stclsprb, tgt[..., 1]),
+                "LVL",
+                field_printer(LVL, lclsprb, tgt[..., 2]),
+                "RSG:",
+                field_printer(RESPGROUP, rspgrpsprb, tgt[..., 3]),
             )
-            print(tgt)
 
         counter += 1
 
