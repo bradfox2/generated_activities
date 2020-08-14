@@ -6,22 +6,15 @@ but where value of  s1 is dependent on t1
 """
 
 import itertools
-from operator import lt
-from typing import Type
 
 import numpy as np
 import torch
 import torch.nn as nn
+import torchtext
 from tqdm import tqdm
 from transformers import AdamW, DistilBertModel, DistilBertTokenizer
 
-from data_processing import (
-    LVL,
-    RESPGROUP,
-    SUBTYPE,
-    TYPE,
-    process,
-)
+from data_processing import LVL, RESPGROUP, SUBTYPE, TYPE, process
 from load_staged_acts import get_dat_data
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -46,7 +39,8 @@ assert numer_trn_act_seqs.index[0] == numer_trn_static_data.index[0]
 # add one to account for target shifting
 max_len = sequence_length + 1
 num_act_cats = 4
-batch_sz = 16
+batch_sz = 8
+rec_len = len(trnseq) // batch_sz
 
 
 def batchify_act_seqs(data, batch_sz):
@@ -91,8 +85,8 @@ num_rspgrp_tokens = len(RESPGROUP.vocab.itos)
 
 emb_dim = 100
 embedding_dim_into_tran = emb_dim * num_act_cats
-num_attn_heads = 4
-num_dec_layers = 4
+num_attn_heads = 2
+num_dec_layers = 2
 # dims (mini_batch(batch_sz) x bptt x act_cats)
 bptt = sequence_length  # sequence of activities of cr
 
@@ -118,7 +112,7 @@ rspgrpc = nn.Linear(embedding_dim_into_tran, num_rspgrp_tokens).to(device)
 
 tmfr_out_layer_norm = nn.LayerNorm(400).to(device)
 
-# TODO: Weight initialization
+# Weight initialization
 initrange = 0.1
 te.weight.data.uniform_(-initrange, initrange)
 ste.weight.data.uniform_(-initrange, initrange)
@@ -135,37 +129,52 @@ rspgrpc.bias.data.zero_()
 
 
 bertsqueeze = nn.Linear(768, 400).to(device)
-static_model = DistilBertModel.from_pretrained("./distilbert_weights/").to(device)
+static_model = DistilBertModel.from_pretrained("distilbert-base-uncased").to(device)
 tokenizer = DistilBertTokenizer.from_pretrained(
     "distilbert-base-uncased", return_tensors="pt"
 )
 bert_squeeze_layer_norm = nn.LayerNorm(400).to(device)
 
+
+def get_field_term_weights(field: torchtext.data.field) -> torch.Tensor:
+    total_counts = sum(field.vocab.freqs.values())
+    inverse_proportion_of_term = {
+        k: 1 / (v / total_counts) for k, v in field.vocab.freqs.items()
+    }
+    return torch.tensor(
+        [
+            inverse_proportion_of_term[i]
+            if i in inverse_proportion_of_term.keys()
+            else 1 / total_counts
+            for i in field.vocab.itos
+        ]
+    ).to(device)
+
+
 t_pad_index = TYPE.vocab.stoi["<pad>"]
 t_eos_index = TYPE.vocab.stoi["<eos>"]
-t_loss_weight = torch.ones(num_type_tokens)
-t_loss_weight[t_eos_index] = 1 / num_type_tokens
+t_loss_weight = get_field_term_weights(TYPE)
 
 st_pad_index = SUBTYPE.vocab.stoi["<pad>"]
-st_eos_index = TYPE.vocab.stoi["<eos>"]
-st_loss_weight = torch.ones(num_subtype_tokens)
-st_loss_weight[t_eos_index] = 1 / num_subtype_tokens
+st_eos_index = SUBTYPE.vocab.stoi["<eos>"]
+st_loss_weight = get_field_term_weights(SUBTYPE)
 
-l_pad_index = TYPE.vocab.stoi["<pad>"]
-l_eos_index = TYPE.vocab.stoi["<eos>"]
-l_loss_weight = torch.ones(num_lvl_tokens)
-l_loss_weight[t_eos_index] = 1 / num_lvl_tokens
+l_pad_index = LVL.vocab.stoi["<pad>"]
+l_eos_index = LVL.vocab.stoi["<eos>"]
+l_loss_weight = get_field_term_weights(LVL)
 
-rg_pad_index = TYPE.vocab.stoi["<pad>"]
-rg_eos_index = TYPE.vocab.stoi["<eos>"]
-rg_loss_weight = torch.ones(num_rspgrp_tokens)
-rg_loss_weight[t_eos_index] = 1 / num_rspgrp_tokens
+rg_pad_index = RESPGROUP.vocab.stoi["<pad>"]
+rg_eos_index = RESPGROUP.vocab.stoi["<eos>"]
+rg_loss_weight = get_field_term_weights(RESPGROUP)
 
-
-t_crit = nn.CrossEntropyLoss(ignore_index=t_pad_index).to(device)
-st_crit = nn.CrossEntropyLoss(ignore_index=st_pad_index).to(device)
-l_crit = nn.CrossEntropyLoss(ignore_index=l_pad_index).to(device)
-rg_crit = nn.CrossEntropyLoss(ignore_index=rg_pad_index).to(device)
+t_crit = nn.CrossEntropyLoss(ignore_index=t_pad_index, weight=t_loss_weight).to(device)
+st_crit = nn.CrossEntropyLoss(ignore_index=st_pad_index, weight=st_loss_weight).to(
+    device
+)
+l_crit = nn.CrossEntropyLoss(ignore_index=l_pad_index, weight=l_loss_weight).to(device)
+rg_crit = nn.CrossEntropyLoss(ignore_index=rg_pad_index, weight=rg_loss_weight).to(
+    device
+)
 optimizer = torch.optim.AdamW(
     [
         {"params": tc.parameters()},
@@ -214,6 +223,8 @@ for i in range(epochs):
         static_tok_output = tokenizer(
             static_data.tolist(), padding=True, truncation=True, return_tensors="pt"
         ).to(device)
+
+        optimizer.zero_grad()
 
         em_st_src = static_model(**static_tok_output)[0].mean(1).unsqueeze(0)
         em_st_src = bertsqueeze(em_st_src)
@@ -275,35 +286,34 @@ for i in range(epochs):
         tgt_loss += l_crit(lclsprb, tgt[..., 2].flatten())
         tgt_loss += rg_crit(rspgrpsprb, tgt[..., 2].flatten())
         tgt_loss.backward()
-        _ = torch.nn.utils.clip_grad_norm_(
-            list(
-                itertools.chain.from_iterable(
-                    [
-                        list(i)
-                        for i in [
-                            # tc.parameters(),
-                            # stc.parameters(),
-                            # ltc.parameters(),
-                            tfmr_dec.parameters(),
-                            # te.parameters(),
-                            # ste.parameters(),
-                            # le.parameters(),
-                            # act_emb_layer_norm.parameters(),
-                            # tfmr_enc.parameters(),
-                            # rspgrpe.parameters(),
-                            # rspgrpc.parameters(),
-                            # bert_squeeze_layer_norm.parameters(),
-                            # bertsqueeze.parameters(),
-                            # tmfr_out_layer_norm.parameters(),
-                        ]
-                    ]
-                )
-            ),
-            0.5,
-        )
+        # _ = torch.nn.utils.clip_grad_norm_(
+        #     list(
+        #         itertools.chain.from_iterable(
+        #             [
+        #                 list(i)
+        #                 for i in [
+        #                     # tc.parameters(),
+        #                     # stc.parameters(),
+        #                     # ltc.parameters(),
+        #                     tfmr_dec.parameters(),
+        #                     # te.parameters(),
+        #                     # ste.parameters(),
+        #                     # le.parameters(),
+        #                     # act_emb_layer_norm.parameters(),
+        #                     # tfmr_enc.parameters(),
+        #                     # rspgrpe.parameters(),
+        #                     # rspgrpc.parameters(),
+        #                     # bert_squeeze_layer_norm.parameters(),
+        #                     # bertsqueeze.parameters(),
+        #                     # tmfr_out_layer_norm.parameters(),
+        #                 ]
+        #             ]
+        #         )
+        #     ),
+        #     0.5,
+        # )
         optimizer.step()
         db_optim.step()
-        optimizer.zero_grad()
 
         total_loss += tgt_loss
 
