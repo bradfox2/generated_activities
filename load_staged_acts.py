@@ -1,4 +1,4 @@
-'''loads long dataset of staged acts with the cr details, and makes staged act sequences grouped by crs'''
+"""loads long dataset of staged acts with the cr details, and makes staged act sequences grouped by crs"""
 
 from os import startfile
 import pandas
@@ -39,7 +39,7 @@ def get_dat_data():
     tst_static_data = tst_data[["CR_CD", "DESCR"]].drop_duplicates().set_index("CR_CD")
     tst_static_data = tst_static_data[tst_static_data.index.isin(tst_act_seqs.index)]
 
-    return trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data
+    return trn_act_seqs, tst_act_seqs, trn_static_data, tst_static_data
 
 
 if __name__ == "__main__":
