@@ -16,26 +16,7 @@ from transformers import AdamW, DistilBertModel, DistilBertTokenizer
 
 from data_processing import LVL, RESPGROUP, SUBTYPE, TYPE, process
 from load_staged_acts import get_dat_data
-
-
-def field_printer(field, prob_tensor, tgt):
-    print(
-        list(
-            zip(
-                [
-                    field.vocab.itos[i]
-                    for i in prob_tensor.argmax(dim=-1).flatten()
-                    if field.vocab.itos[i] != "<pad>"
-                ],
-                [
-                    field.vocab.itos[i]
-                    for i in tgt.flatten()
-                    if field.vocab.itos[i] != "<pad>"
-                ],
-            )
-        )
-    )
-
+from utils import field_printer
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
