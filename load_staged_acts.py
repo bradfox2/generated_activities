@@ -19,14 +19,14 @@ def create_act_seqs(df, seq_field_names, group_column_name="CR_CD"):
     return act_seqs
 
 
-def get_dat_data():
+def get_dat_data(split_frac: float = 0.8):
     cr_data = pandas.read_csv(
         "staged_activities.csv",
         dtype={k: object for k in staged_activity_fields},
         parse_dates=True,
     )
 
-    tst_data = cr_data[: int(0.2 * len(cr_data))]
+    tst_data = cr_data[: int((1 - split_frac) * len(cr_data))]
     trn_data = cr_data[len(tst_data) + 1 :]
 
     trn_act_seqs = create_act_seqs(trn_data, staged_activity_fields)

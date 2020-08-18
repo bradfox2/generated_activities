@@ -2,6 +2,9 @@
 
 import pandas
 import torchtext
+from pandas import Series
+import torch
+import numpy as np
 
 # trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data = get_dat_data()
 
@@ -46,7 +49,7 @@ RESPGROUP = torchtext.data.Field(
 )
 
 
-def truncate_series_by_len(series: pandas.Series, max_len: int):
+def truncate_series_by_len(series: Series, max_len: int):
     return series[series.apply(len) <= max_len]
 
 
@@ -66,7 +69,33 @@ def pad_series_to_max_len(series: pandas.Series, pad_token, pad_len):
     return series.apply(lambda x: pad(x, pad_len, pad_token, num_fields_to_pad))
 
 
-def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data, max_len):
+def batchify_act_seqs(data, batch_sz):
+    """ build 4d tensor of dims (crs x sequences(max_length) x batchsz x num_act_cats) """
+    data = torch.tensor(data)
+    nbatch = data.size(0) // batch_sz
+    data = data.narrow(0, 0, nbatch * batch_sz)
+    # add a dim to the act cats for future mini batch dim, and then split long ways, along the cr dim
+    chunks = torch.chunk(data.unsqueeze(2), batch_sz)
+    # concat along the new act_cats dim to construct the mini batch dim
+    return torch.cat(chunks, dim=2)
+
+
+def batchify_static_data(static_data, batch_sz):
+    n = np.array(static_data)
+    n = np.expand_dims(n, 1)
+    n = np.concatenate(np.vsplit(n, batch_sz), 1)
+    return n
+
+
+def process(
+    trn_act_seqs: Series,
+    trn_static_data: Series,
+    tst_act_seqs: Series,
+    tst_static_data: Series,
+    max_len: int,
+):
+    """ Main data processing function that will build independent category tokenizers, 
+    numericalize the tokens, and truncate and pad to maximum sequence length."""
     TYPE.build_vocab(
         [
             [act[0] for act in actlist if not pandas.isna(act[0])]
@@ -114,8 +143,10 @@ def process(trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data, max_le
                     RESPGROUP.vocab.stoi[eos_token],
                 ],
             ]
-            #assume type, st, lvl, rg have pad tokens that reference the same numericalized value
-            act_seq.extend([[TYPE.vocab.stoi[pad_token]] * 4] * (max_len - len(act_seq)))
+            # assume type, st, lvl, rg have pad tokens that reference the same numericalized value
+            act_seq.extend(
+                [[TYPE.vocab.stoi[pad_token]] * 4] * (max_len - len(act_seq))
+            )
             return act_seq
 
         else:
