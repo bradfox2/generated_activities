@@ -22,7 +22,7 @@ model_name = "SIAG"  # Seq_Ind_Acts_Generation
 train_logger = logging.getLogger()
 train_logger.setLevel(logging.DEBUG)
 # create file handler which logs even debug messages
-fh = logging.FileHandler(model_name)
+fh = logging.FileHandler(f"{model_name}_training.log")
 fh.setLevel(logging.DEBUG)
 # create console handler with a higher log level
 ch = logging.StreamHandler()
@@ -124,13 +124,23 @@ for i in range(epochs):
         if counter % log_interval == 0:
             loss_tracker.append(epoch_loss / log_interval)
             train_logger.info(f"Epoch: {i}")
-            train_logger.info(f"Record: {counter}'/'{rec_len}")
+            train_logger.info(f"Record: {counter}/{rec_len}")
             train_logger.info(f"LR: {model.scheduler.get_last_lr()[0]}")
             train_logger.info(f"Loss: {(epoch_loss / log_interval)}")
             epoch_loss = 0.0
     epoch_avg_loss = sum(loss_tracker) / len(loss_tracker)
     train_loss_record.append(epoch_avg_loss)
+
+    # save checkpoint
+    checkpoint_path = f"./saved_models/checkpoint-{model_name}-EP{i}-TRNLOSS{epoch_avg_loss}-{datetime.datetime.today()}.ptm"
+    train_logger.info(f"Saving Checkpoint {checkpoint_path}")
     torch.save(
-        model.state_dict(),
-        f"./saved_models/{model_name}-EP{i}-TRNLOSS{epoch_avg_loss}-{datetime.datetime.today()}",
+        {
+            "epoch": i,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": model.optimizer.state_dict(),
+            "static_optimizer_state_dict": model.static_optimizer.state_dict(),
+            "loss": loss,
+        },
+        f"./saved_models/checkpoint-{model_name}-EP{i}-TRNLOSS{epoch_avg_loss}-{datetime.datetime.today()}.ptm",
     )
