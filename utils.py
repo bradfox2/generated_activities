@@ -5,6 +5,7 @@ import torch
 
 
 def field_printer(field: Field, prob_tensor: Tensor, tgt: Tensor) -> Tensor:
+    ''' reverse tokenizes tensors using field.vocab, returns [(prob, target), ...]'''
     print(
         list(
             zip(

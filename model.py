@@ -10,7 +10,7 @@ import torch.nn as nn
 import transformers
 from torch.tensor import Tensor
 from torchtext.data.field import Field
-from transformers import  DistilBertModel, DistilBertTokenizer
+from transformers import DistilBertModel, DistilBertTokenizer
 
 from utils import get_field_term_weights
 
@@ -87,10 +87,6 @@ class SAModel(nn.Module):
                 )
             except Exception as e:
                 raise (e)
-
-        self.static_tokenizer = DistilBertTokenizer.from_pretrained(
-            "distilbert-base-uncased", return_tensors="pt"
-        )
         self.static_data_embedding_size = static_data_embedding_size
         self.static_data_squeeze = nn.Linear(
             self.static_data_embedding_size, self.transformer_dim_sz
@@ -188,7 +184,7 @@ class SAModel(nn.Module):
             self._generate_square_target_mask(self.sequence_length)
             if self.mask is None
             else self.mask
-        )
+        ).to(self.device)
 
         assert self._pad_tokens_identical()
         tgt_pad_idx = self.independent_categoricals[0].padding_idx
@@ -212,15 +208,13 @@ class SAModel(nn.Module):
         cat_embs_nrm = self.cat_emb_layer_norm(cats_combined_embedding)
 
         tgt_key_padding_mask = data == tgt_pad_idx
-        tgt_key_padding_mask = tgt_key_padding_mask.permute(1, 0, 2)[:, :, 0].to(
-            self.device
-        )
+        tgt_key_padding_mask = tgt_key_padding_mask.permute(1, 0, 2)[:, :, 0]
 
         tfmr_out = self.transformer_decoder(
             cat_embs_nrm,
             memory=static_data_embedding_squeeze_normed,
-            tgt_mask=self.mask.to(self.device),
-            tgt_key_padding_mask=tgt_key_padding_mask.to(self.device),
+            tgt_mask=self.mask,
+            tgt_key_padding_mask=tgt_key_padding_mask,
         )
 
         classification_layer_outputs = []
@@ -232,8 +226,8 @@ class SAModel(nn.Module):
         self.optimizer.zero_grad()
         self.static_optimizer.zero_grad()
 
-        data = data.to(self.device)
-        targets = targets.to(self.device)
+        data = data
+        targets = targets
 
         preds = self.forward(data, static_data)
 
