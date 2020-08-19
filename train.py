@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import torch
 from torch.nn.modules import loss
+from transformers import DistilBertTokenizer
 
 from data_processing import (
     LVL,
@@ -16,6 +17,7 @@ from data_processing import (
 )
 from load_staged_acts import get_dat_data
 from model import IndependentCategorical, SAModel
+from utils import field_printer
 
 model_name = "SIAG"  # Seq_Ind_Acts_Generation
 
@@ -86,6 +88,24 @@ def gen_inp_data_set(seq_data: torch.Tensor, static_data: np.array):
         yield inp, target, static_data[i]
 
 
+def validate():
+    with torch.no_grad():
+        val_loss = 0.0
+        data_gen = gen_inp_data_set(seq_data_tst, static_data_tst)
+        # data, tgt, static_data = next(data_gen)
+        for data, tgt, static_data in data_gen:
+            static_data = static_tokenizer(
+                static_data.tolist(), padding=True, truncation=True, return_tensors="pt"
+            ).to(model.device)
+            preds = model(data.to(model.device), static_data)
+            batch_loss = model.loss(preds, tgt.to(model.device))
+            val_loss += batch_loss
+        val_loss /= len(seq_data_tst // batch_sz)
+        print("TYPE:")
+        field_printer(TYPE, preds[0], tgt[..., 0])
+        return val_loss.item()
+
+
 type_ = IndependentCategorical.from_torchtext_field("type_", TYPE)
 subtype = IndependentCategorical.from_torchtext_field("subtype", SUBTYPE)
 lvl = IndependentCategorical.from_torchtext_field("lvl", LVL)
@@ -98,24 +118,29 @@ model = SAModel(
     emb_dim,
     num_attn_heads,
     num_dec_layers,
-    learning_rate=1e-4,
+    learning_rate=1e-3,
     learning_rate_decay_rate=0.98,
     independent_categoricals=[type_, subtype, lvl, respgroup],
     device=device,
 )
 
+static_tokenizer = DistilBertTokenizer.from_pretrained(
+    "distilbert-base-uncased", return_tensors="pt"
+)
+
+
 model.to(device)
-model.train()
 log_interval = 100
 train_loss_record = []
 epochs = 100
 for i in range(epochs):
+    model.train()
     epoch_loss = 0.0
     counter = 0
     loss_tracker = []
     data_gen = gen_inp_data_set(seq_data_trn, static_data_trn)
     for data, tgt, static_data in data_gen:
-        static_data = model.static_tokenizer(
+        static_data = static_tokenizer(
             static_data.tolist(), padding=True, truncation=True, return_tensors="pt"
         ).to(device)
         batch_loss = model.learn(data, static_data, tgt)
@@ -130,6 +155,8 @@ for i in range(epochs):
             epoch_loss = 0.0
     epoch_avg_loss = sum(loss_tracker) / len(loss_tracker)
     train_loss_record.append(epoch_avg_loss)
+
+    train_logger.info(f"Validation Loss: {validate():.3f}")
 
     # save checkpoint
     checkpoint_path = f"./saved_models/chkpnt-{model_name}-EP{i}-TRNLOSS{str(epoch_avg_loss)[:5].replace('.','dot')}-{datetime.datetime.today().strftime('%Y-%m-%d %H-%M-%S')}.ptm"
@@ -147,3 +174,25 @@ for i in range(epochs):
     )
 
 torch.save(model.state_dict(), f"./saved_models/{model_name}.ptm")
+
+
+def load_model():
+    model = SAModel(
+        sequence_length,
+        batch_sz,
+        emb_dim,
+        num_attn_heads,
+        num_dec_layers,
+        learning_rate=1e-3,
+        learning_rate_decay_rate=0.98,
+        independent_categoricals=[type_, subtype, lvl, respgroup],
+        device="cuda",
+    )
+
+    chkpnt = torch.load(
+        "./saved_models/chkpnt-SIAG-EP5-TRNLOSS6dot711-2020-08-18_20-58-24.ptm"
+    )
+    model.load_state_dict(chkpnt["model_state_dict"])
+    model.eval()
+    model.to(model.device)
+
