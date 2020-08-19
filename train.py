@@ -126,13 +126,13 @@ for i in range(epochs):
             train_logger.info(f"Epoch: {i}")
             train_logger.info(f"Record: {counter}/{rec_len}")
             train_logger.info(f"LR: {model.scheduler.get_last_lr()[0]}")
-            train_logger.info(f"Loss: {(epoch_loss / log_interval)}")
+            train_logger.info(f"Loss: {(epoch_loss / log_interval):.3f}")
             epoch_loss = 0.0
     epoch_avg_loss = sum(loss_tracker) / len(loss_tracker)
     train_loss_record.append(epoch_avg_loss)
 
     # save checkpoint
-    checkpoint_path = f"./saved_models/chkpnt-{model_name}-EP{i}-TRNLOSS{str(epoch_avg_loss).replace('.','dot'):.3f}-{datetime.datetime.today().strftime('%Y-%m-%d %H:%M:%S')}.ptm"
+    checkpoint_path = f"./saved_models/chkpnt-{model_name}-EP{i}-TRNLOSS{str(epoch_avg_loss)[:5].replace('.','dot')}-{datetime.datetime.today().strftime('%Y-%m-%d %H-%M-%S')}.ptm"
     checkpoint_path = checkpoint_path[:260].replace(" ", "_")
     train_logger.info(f"Saving Checkpoint {checkpoint_path}")
     torch.save(
@@ -141,7 +141,7 @@ for i in range(epochs):
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": model.optimizer.state_dict(),
             "static_optimizer_state_dict": model.static_optimizer.state_dict(),
-            "loss": loss,
+            "loss": epoch_avg_loss,
         },
         checkpoint_path,
     )

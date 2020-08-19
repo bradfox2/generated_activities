@@ -3,20 +3,16 @@ ie. ['sos','sos'] -> ['t1', 's1'] where t and s are from different categorical s
 but where value of  s1 is dependent on t1
 """
 
-from os import execl
-from typing import Dict, List
+from typing import List
 
-import numpy as np
 import torch
 import torch.nn as nn
-import torchtext
-from torchtext.data.field import Field
 import transformers
 from torch.tensor import Tensor
-from tqdm import tqdm
-from transformers import AdamW, DistilBertModel, DistilBertTokenizer, optimization
+from torchtext.data.field import Field
+from transformers import  DistilBertModel, DistilBertTokenizer
 
-from utils import field_printer, get_field_term_weights
+from utils import get_field_term_weights
 
 
 class IndependentCategorical(object):
@@ -50,7 +46,6 @@ class SAModel(nn.Module):
         static_data_embedding_size: int = 768,
         device: torch.device = torch.device("cpu"),
     ) -> None:
-        from transformers import DistilBertModel, DistilBertTokenizer
 
         super(SAModel, self).__init__()
         self.sequence_length = sequence_length

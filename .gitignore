@@ -6,3 +6,4 @@ env
 __pycache__
 distilbert_weights/*
 *.log
+saved_models/*
