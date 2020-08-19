@@ -3,4 +3,9 @@ staged_activities.csv
 *.csv
 *.xlsx
 env
-distilbert_weights/
+*.pyc
+*.csv
+__pycache__
+distilbert_weights/*
+*.log
+saved_models/*
