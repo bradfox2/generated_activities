@@ -2,3 +2,5 @@ settings.json
 staged_activities.csv
 *.csv
 *.xlsx
+env
+distilbert_weights/
