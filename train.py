@@ -53,8 +53,8 @@ emb_dim = 100  # embedding dim for each categorical
 embedding_dim_into_tran = (
     emb_dim * num_act_cats
 )  # embedding dim size into transformer layers
-num_attn_heads = 2  # number of transformer attention heads
-num_dec_layers = 2  # number of transformer decoder layers (main layers)
+num_attn_heads = 8  # number of transformer attention heads
+num_dec_layers = 6  # number of transformer decoder layers (main layers)
 bptt = sequence_length  # back prop through time or sequence length, how far the lookback window goes
 
 # tokenize, truncate, pad
@@ -101,13 +101,11 @@ def validate():
             preds = model(data.to(model.device), static_data)
             batch_loss = model.loss(preds, tgt.to(model.device))
             val_loss += batch_loss
-            # val_loss /= len(seq_data_tst)
-            # print("TYPE:")
-            field_printer(TYPE, preds[0], tgt[..., 0])
-            field_printer(SUBTYPE, preds[1], tgt[..., 1])
-            field_printer(LVL, preds[2], tgt[..., 2])
-            field_printer(RESPGROUP, preds[3], tgt[..., 3])
-        return val_loss.item()
+            # field_printer(TYPE, preds[0], tgt[..., 0])
+            # field_printer(SUBTYPE, preds[1], tgt[..., 1])
+            # field_printer(LVL, preds[2], tgt[..., 2])
+            # field_printer(RESPGROUP, preds[3], tgt[..., 3])
+        return val_loss.item() / len(seq_data_tst)
 
 
 type_ = IndependentCategorical.from_torchtext_field("type_", TYPE)
@@ -194,9 +192,12 @@ def load_model():
     )
 
     chkpnt = torch.load(
-        "./saved_models/chkpnt-SIAG-EP5-TRNLOSS6dot711-2020-08-18_20-58-24.ptm"
+        "./saved_models/chkpnt-SIAG-EP67-TRNLOSS1dot821-2020-08-19_14-36-14.ptm"
     )
     model.load_state_dict(chkpnt["model_state_dict"])
     model.eval()
     model.to(model.device)
+    return model
 
+
+model = load_model()
