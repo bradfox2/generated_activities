@@ -5,3 +5,4 @@ env
 .vscode
 __pycache__
 distilbert_weights/*
+*.log
