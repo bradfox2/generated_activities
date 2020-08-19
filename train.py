@@ -45,9 +45,7 @@ sequence_length = (
     5  # maximum number of independent category groups that make up a sequence
 )
 num_act_cats = 4  # number of independent fields in a category group
-batch_sz = (
-    8  # minibatch size, sequences of independent cat groups to be processed in parallel
-)
+batch_sz = 16  # minibatch size, sequences of independent cat groups to be processed in parallel
 rec_len = len(trnseq) // batch_sz  # num records in training set, used for batchifying
 emb_dim = 100  # embedding dim for each categorical
 embedding_dim_into_tran = (
