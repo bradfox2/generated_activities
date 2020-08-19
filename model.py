@@ -91,6 +91,7 @@ class SAModel(nn.Module):
         self.static_data_squeeze = nn.Linear(
             self.static_data_embedding_size, self.transformer_dim_sz
         )
+        self.cat_emb_expand = nn.Linear(self.num_independent_categoricals * self.categorical_embedding_dim, self.static_data_embedding_size)
         self.static_data_layer_norm = nn.LayerNorm(self.transformer_dim_sz)
 
         self.scheduler = torch.optim.lr_scheduler.StepLR(
@@ -164,9 +165,10 @@ class SAModel(nn.Module):
             layer.weight.data.uniform_(-self.weight_initrange, self.weight_initrange)
             layer.bias.data.zero_()
 
-        self.bert_squeeze.weight.data.uniform_(
+        self.cat_emb_expand.weight.data.uniform_(
             -self.weight_initrange, self.weight_initrange
         )
+        self.cat_emb_expand.bias.data.zero_() 
 
     def _generate_square_target_mask(self, seq_len):
         """ Generates a top right triangle square mask of the target sequence.  
@@ -195,10 +197,10 @@ class SAModel(nn.Module):
 
         assert list(static_data_embedding.shape[:-1]) == [1, self.batch_sz]
 
-        static_data_embedding_squeeze = self.static_data_squeeze(static_data_embedding)
-        static_data_embedding_squeeze_normed = self.static_data_layer_norm(
-            static_data_embedding_squeeze
-        )
+        #static_data_embedding_squeeze = self.static_data_squeeze(static_data_embedding)
+        #static_data_embedding_squeeze_normed = self.static_data_layer_norm(
+        #    static_data_embedding_squeeze
+        #)
 
         cat_embeddings_list = []
         for idx, embedding in enumerate(self.cat_embeddings):
@@ -206,13 +208,14 @@ class SAModel(nn.Module):
 
         cats_combined_embedding = torch.cat(cat_embeddings_list, dim=2)
         cat_embs_nrm = self.cat_emb_layer_norm(cats_combined_embedding)
+        cat_embs_expanded = self.cat_emb_expand(cats_emb_nrm)
 
         tgt_key_padding_mask = data == tgt_pad_idx
         tgt_key_padding_mask = tgt_key_padding_mask.permute(1, 0, 2)[:, :, 0]
 
         tfmr_out = self.transformer_decoder(
             cat_embs_nrm,
-            memory=static_data_embedding_squeeze_normed,
+            memory=static_data_embedding,
             tgt_mask=self.mask,
             tgt_key_padding_mask=tgt_key_padding_mask,
         )
