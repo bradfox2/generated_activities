@@ -249,4 +249,3 @@ class SAModel(nn.Module):
         self.static_optimizer.step()
 
         return loss.item()
-

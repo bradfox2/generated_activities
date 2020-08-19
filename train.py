@@ -132,7 +132,8 @@ for i in range(epochs):
     train_loss_record.append(epoch_avg_loss)
 
     # save checkpoint
-    checkpoint_path = f"./saved_models/checkpoint-{model_name}-EP{i}-TRNLOSS{epoch_avg_loss}-{datetime.datetime.today()}.ptm"
+    checkpoint_path = f"./saved_models/chkpnt-{model_name}-EP{i}-TRNLOSS{epoch_avg_loss:.3f}-{datetime.datetime.today().strftime('%Y-%m-%d %H:%M:%S')}.ptm"
+    checkpoint_path = checkpoint_path[:260]
     train_logger.info(f"Saving Checkpoint {checkpoint_path}")
     torch.save(
         {
@@ -142,5 +143,5 @@ for i in range(epochs):
             "static_optimizer_state_dict": model.static_optimizer.state_dict(),
             "loss": loss,
         },
-        f"./saved_models/checkpoint-{model_name}-EP{i}-TRNLOSS{epoch_avg_loss}-{datetime.datetime.today()}.ptm",
+        checkpoint_path,
     )
