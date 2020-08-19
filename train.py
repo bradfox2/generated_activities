@@ -89,6 +89,7 @@ def gen_inp_data_set(seq_data: torch.Tensor, static_data: np.array):
 
 
 def validate():
+    model.eval()
     with torch.no_grad():
         val_loss = 0.0
         data_gen = gen_inp_data_set(seq_data_tst, static_data_tst)
@@ -100,9 +101,12 @@ def validate():
             preds = model(data.to(model.device), static_data)
             batch_loss = model.loss(preds, tgt.to(model.device))
             val_loss += batch_loss
-        val_loss /= len(seq_data_tst // batch_sz)
-        print("TYPE:")
-        field_printer(TYPE, preds[0], tgt[..., 0])
+            # val_loss /= len(seq_data_tst)
+            # print("TYPE:")
+            field_printer(TYPE, preds[0], tgt[..., 0])
+            field_printer(SUBTYPE, preds[1], tgt[..., 1])
+            field_printer(LVL, preds[2], tgt[..., 2])
+            field_printer(RESPGROUP, preds[3], tgt[..., 3])
         return val_loss.item()
 
 
