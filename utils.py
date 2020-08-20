@@ -34,7 +34,7 @@ def get_field_term_weights(field: torchtext.data.field) -> torch.Tensor:
         [
             inverse_proportion_of_term[i]
             if i in inverse_proportion_of_term.keys()
-            else 1 / total_counts
+            else 1 / 1
             for i in field.vocab.itos
         ]
     )
