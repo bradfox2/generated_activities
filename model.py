@@ -170,7 +170,7 @@ class SAModel(nn.Module):
 
     def _generate_square_target_mask(self, seq_len):
         """ Generates a top right triangle square mask of the target sequence.  
-        Prevents attending to targets not available at inference time. """
+        Prevents attending to targets that only exist forward in time. """
         tgt_mask = (torch.triu(torch.ones(seq_len, seq_len)) == 1).transpose(0, 1)
         tgt_mask = (
             tgt_mask.float()

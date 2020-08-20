@@ -5,7 +5,7 @@ import torch
 
 
 def field_printer(field: Field, prob_tensor: Tensor, tgt: Tensor) -> Tensor:
-    ''' reverse tokenizes tensors using field.vocab, returns [(prob, target), ...]'''
+    """ reverse tokenizes tensors using field.vocab, returns [(prob, target), ...]"""
     print(
         list(
             zip(
@@ -24,6 +24,9 @@ def field_printer(field: Field, prob_tensor: Tensor, tgt: Tensor) -> Tensor:
     )
 
 
+import math
+
+
 def get_field_term_weights(field: torchtext.data.field) -> torch.Tensor:
     """ Gets normalized class weights from a torchtext.field object sufficient for passing into cross entropy loss criterion."""
     total_counts = sum(field.vocab.freqs.values())
@@ -32,9 +35,9 @@ def get_field_term_weights(field: torchtext.data.field) -> torch.Tensor:
     }
     return torch.tensor(
         [
-            inverse_proportion_of_term[i]
+            math.log(inverse_proportion_of_term[i]) + 1
             if i in inverse_proportion_of_term.keys()
-            else 1 / 1
+            else math.log(1 / 1) + 1
             for i in field.vocab.itos
         ]
     )

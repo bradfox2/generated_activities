@@ -21,16 +21,16 @@ num_act_cats = 4  # number of independent fields in a category group
 batch_sz = (
     8  # minibatch size, sequences of independent cat groups to be processed in parallel
 )
-emb_dim = 128  # embedding dim for each categorical
+emb_dim = 16  # embedding dim for each categorical
 embedding_dim_into_tran = (
     emb_dim * num_act_cats
 )  # embedding dim size into transformer layers
-num_attn_heads = 4  # number of transformer attention heads
-num_dec_layers = 2  # number of transformer decoder layers (main layers)
+num_attn_heads = 1  # number of transformer attention heads
+num_dec_layers = 1  # number of transformer decoder layers (main layers)
 bptt = sequence_length  # back prop through time or sequence length, how far the lookback window goes
 
 
-model_name = "SIAG_small"
+model_name = "SIAG_very_small"
 fields = f"{model_name}_fields.pkl"
 
 # load model and fields(tokenizers) needed
@@ -59,10 +59,15 @@ model = SAModel(
     device=torch.device("cpu"),
 )
 
-model_state_dict = torch.load("./saved_models/SIAG_small.ptm", map_location="cpu",)
+model_state_dict = torch.load(f"./saved_models/{model_name}.ptm", map_location="cpu",)
 model.load_state_dict(model_state_dict)
 
-static_data = "the pump broke really bad in the containment building"
+static_data = """'Revision to the Surveillance Testing procedure added definition of and amended a form to require recording of the ST Commencement date.  While the changes support and correspond to the established appropriate method of managing ST records and test performance intervals, ST have questioned the implications of the 
+new documentation requirement.  Discussions with ST Performance Group representatives have identified the changes contradict a longstanding misconception regarding the ST interval clocking 
+basis [i.e., understood to be based upon ST Acceptance Review completion versus ST Commencement date].  Clarification is suggested as an enhancement to bring a common understanding and ease of procedure use, no violation of procedure adherence is identified.   
+Suggest the following Action Items be developed and assigned to resolve: PCR is needed to add the clarification to 73DP-9ZZ14 Surveillance Testing procedure regarding the importance of the ST Commencement Date for ST interval tracking.  Following text or similar to be added ? `Surveillance Test Commencement dates are used to establish ST performance intervals.  
+Scheduled Start dates for ST performances should be closely observed.  ST commencement prior to the scheduled Start date extends the interval between that ST and the next scheduled ST Start date, and may result in the maximum ST interval being exceeded.? Action Item assigned to SPCG Unit 8219 to provide clarification to the ST performance groups regarding the Commencement date as 
+the ST interval clocking bases and the importance of the Commencement Date entry in SWMS. Action Item assigned to SPCG Unit 8219 Benchmark to find out how other stations are calculating surveillance test intervals.'"""
 
 static_data = static_tokenizer(
     [static_data], padding=True, truncation=True, return_tensors="pt"
@@ -84,5 +89,11 @@ with torch.no_grad():
         rg = rg[-1].argmax()
         next_seq = torch.tensor([[[t, st, l, rg]]])
         seq_data = torch.cat((seq_data, next_seq))
+        print(
+            TYPE.vocab.itos[t],
+            SUBTYPE.vocab.itos[st],
+            LVL.vocab.itos[l],
+            RESPGROUP.vocab.itos[rg],
+        )
     print(seq_data)
 

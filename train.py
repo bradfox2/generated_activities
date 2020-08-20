@@ -3,7 +3,15 @@ import logging
 import pickle
 
 import numpy as np
+
+np.random.seed(0)
+
 import torch
+
+torch.manual_seed(0)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
 from torch.nn.modules import loss
 from transformers import DistilBertTokenizer
 
@@ -20,7 +28,9 @@ from load_staged_acts import get_dat_data
 from model import IndependentCategorical, SAModel
 from utils import field_printer
 
-model_name = "SIAG_small"  # Seq_Ind_Acts_Generation
+torch.manual_seed(0)
+
+model_name = "SIAG_very_small"  # Seq_Ind_Acts_Generation
 
 train_logger = logging.getLogger()
 train_logger.setLevel(logging.DEBUG)
@@ -50,12 +60,12 @@ batch_sz = (
     8  # minibatch size, sequences of independent cat groups to be processed in parallel
 )
 rec_len = len(trnseq) // batch_sz  # num records in training set, used for batchifying
-emb_dim = 128  # embedding dim for each categorical
+emb_dim = 16  # embedding dim for each categorical
 embedding_dim_into_tran = (
     emb_dim * num_act_cats
 )  # embedding dim size into transformer layers
-num_attn_heads = 4  # number of transformer attention heads
-num_dec_layers = 2  # number of transformer decoder layers (main layers)
+num_attn_heads = 1  # number of transformer attention heads
+num_dec_layers = 1  # number of transformer decoder layers (main layers)
 bptt = sequence_length  # back prop through time or sequence length, how far the lookback window goes
 
 # tokenize, truncate, pad
@@ -135,7 +145,7 @@ static_tokenizer = DistilBertTokenizer.from_pretrained(
 model.to(device)
 log_interval = 100
 train_loss_record = []
-epochs = 3
+epochs = 10
 for i in range(epochs):
     model.train()
     epoch_loss = 0.0

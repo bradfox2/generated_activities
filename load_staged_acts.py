@@ -25,6 +25,7 @@ def get_dat_data(split_frac: float = 0.8):
         dtype={k: object for k in staged_activity_fields},
         parse_dates=True,
     )
+    cr_data = cr_data.sample(frac=1)
 
     tst_data = cr_data[: int((1 - split_frac) * len(cr_data))]
     trn_data = cr_data[len(tst_data) + 1 :]
