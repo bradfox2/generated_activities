@@ -18,7 +18,9 @@ def create_act_seqs(df, seq_field_names, group_column_name="CR_CD"):
     act_seqs = df.groupby(group_column_name)["field_sequence"].apply(list)
     return act_seqs
 
+
 cr_data.columns
+
 
 def get_dat_data(split_frac: float = 0.8):
     cr_data = pandas.read_csv(
@@ -31,8 +33,15 @@ def get_dat_data(split_frac: float = 0.8):
     # Add Leader comment
 
     cr_data["TEXT"] = ""
-    for col in ["LI_QCLS_CD", "LI_FAIL_CD", "CAP_CLASS", "RESPONSIBLE_GROUP", "DESCR", "LEADER_COMMENT"]:
-        cr_data += f" {col} " cr_data[col]
+    for col in [
+        "LI_QCLS_CD",
+        "LI_FAIL_CD",
+        "CAP_CLASS",
+        "RESPONSIBLE_GROUP",
+        "DESCR",
+        "LEADER_COMMENT",
+    ]:
+        cr_data["TEXT"] += f" {col} " + cr_data[col]
 
     with open("staged_act_test_crs.txt", "r") as f:
         test_set = f.readlines()
