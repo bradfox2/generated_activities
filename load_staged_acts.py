@@ -19,6 +19,9 @@ def create_act_seqs(df, seq_field_names, group_column_name="CR_CD"):
     return act_seqs
 
 
+cr_data.columns
+
+
 def get_dat_data(split_frac: float = 0.8):
     cr_data = pandas.read_csv(
         "staged_activities.csv",
@@ -27,17 +30,33 @@ def get_dat_data(split_frac: float = 0.8):
     )
     cr_data = cr_data.sample(frac=1)
 
-    tst_data = cr_data[: int((1 - split_frac) * len(cr_data))]
-    trn_data = cr_data[len(tst_data) + 1 :]
+    # Add Leader comment
+
+    cr_data["TEXT"] = ""
+    for col in [
+        "LI_QCLS_CD",
+        "LI_FAIL_CD",
+        "CAP_CLASS",
+        "RESPONSIBLE_GROUP",
+        "DESCR",
+        "LEADER_COMMENT",
+    ]:
+        cr_data["TEXT"] += f" {col} " + cr_data[col]
+
+    with open("staged_act_test_crs.txt", "r") as f:
+        test_set = f.readlines()
+
+    tst_data = cr_data[cr_data.CR_CD.isin(test_set)]
+    trn_data = cr_data[~cr_data.CR_CD.isin(test_set)]
 
     trn_act_seqs = create_act_seqs(trn_data, staged_activity_fields)
-    trn_static_data = trn_data[["CR_CD", "DESCR"]].drop_duplicates().set_index("CR_CD")
+    trn_static_data = trn_data[["CR_CD", "TEXT"]].drop_duplicates().set_index("CR_CD")
     trn_static_data = trn_static_data[trn_static_data.index.isin(trn_act_seqs.index)]
 
     assert len(trn_static_data) == len(trn_act_seqs)
 
     tst_act_seqs = create_act_seqs(tst_data, staged_activity_fields)
-    tst_static_data = tst_data[["CR_CD", "DESCR"]].drop_duplicates().set_index("CR_CD")
+    tst_static_data = tst_data[["CR_CD", "TEXT"]].drop_duplicates().set_index("CR_CD")
     tst_static_data = tst_static_data[tst_static_data.index.isin(tst_act_seqs.index)]
 
     return trn_act_seqs, tst_act_seqs, trn_static_data, tst_static_data
