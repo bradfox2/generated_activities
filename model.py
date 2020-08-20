@@ -180,7 +180,6 @@ class SAModel(nn.Module):
         return tgt_mask
 
     def forward(self, data: Tensor, static_data: Tensor):
-        print("asdfadsfasdf")
         self.mask = (
             self._generate_square_target_mask(self.sequence_length)
             if self.mask is None
@@ -213,8 +212,6 @@ class SAModel(nn.Module):
         else:
             tgt_key_padding_mask = None
             self.mask = None
-
-        print(tgt_key_padding_mask)
 
         tfmr_out = self.transformer_decoder(
             cat_embs_nrm,

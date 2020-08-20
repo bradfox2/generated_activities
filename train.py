@@ -135,7 +135,7 @@ static_tokenizer = DistilBertTokenizer.from_pretrained(
 model.to(device)
 log_interval = 100
 train_loss_record = []
-epochs = 1
+epochs = 3
 for i in range(epochs):
     model.train()
     epoch_loss = 0.0
@@ -184,7 +184,6 @@ pickle.dump(
 
 
 def load_model(device: torch.device):
-    print(device)
     model = SAModel(
         sequence_length,
         batch_sz,
