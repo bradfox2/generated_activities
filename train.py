@@ -12,7 +12,6 @@ torch.manual_seed(0)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
-from torch.nn.modules import loss
 from transformers import DistilBertTokenizer
 
 from data_processing import (
@@ -26,7 +25,6 @@ from data_processing import (
 )
 from load_staged_acts import get_dat_data
 from model import IndependentCategorical, SAModel
-from utils import field_printer
 
 torch.manual_seed(0)
 
