@@ -10,3 +10,4 @@ distilbert_weights/*
 *.log
 saved_models/*
 .vscode
+scratch*

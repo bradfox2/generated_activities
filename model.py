@@ -45,6 +45,7 @@ class SAModel(nn.Module):
         independent_categoricals: List[IndependentCategorical],
         static_data_embedding_size: int = 768,
         device: torch.device = torch.device("cpu"),
+        freeze_static_model_weights=True,
     ) -> None:
 
         super(SAModel, self).__init__()
@@ -86,6 +87,9 @@ class SAModel(nn.Module):
                 )
             except Exception as e:
                 raise (e)
+        if freeze_static_model_weights:
+            for param in self.static_data_model.parameters():
+                param.requires_grad = False
         self.static_data_embedding_size = static_data_embedding_size
         self.static_data_squeeze = nn.Linear(
             self.static_data_embedding_size, self.transformer_dim_sz
