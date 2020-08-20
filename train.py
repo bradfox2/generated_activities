@@ -1,5 +1,6 @@
 import datetime
 import logging
+import pickle
 
 import numpy as np
 import torch
@@ -19,7 +20,7 @@ from load_staged_acts import get_dat_data
 from model import IndependentCategorical, SAModel
 from utils import field_printer
 
-model_name = "SIAG"  # Seq_Ind_Acts_Generation
+model_name = "SIAG_small"  # Seq_Ind_Acts_Generation
 
 train_logger = logging.getLogger()
 train_logger.setLevel(logging.DEBUG)
@@ -53,8 +54,8 @@ emb_dim = 128  # embedding dim for each categorical
 embedding_dim_into_tran = (
     emb_dim * num_act_cats
 )  # embedding dim size into transformer layers
-num_attn_heads = 8  # number of transformer attention heads
-num_dec_layers = 6  # number of transformer decoder layers (main layers)
+num_attn_heads = 4  # number of transformer attention heads
+num_dec_layers = 2  # number of transformer decoder layers (main layers)
 bptt = sequence_length  # back prop through time or sequence length, how far the lookback window goes
 
 # tokenize, truncate, pad
@@ -134,7 +135,7 @@ static_tokenizer = DistilBertTokenizer.from_pretrained(
 model.to(device)
 log_interval = 100
 train_loss_record = []
-epochs = 100
+epochs = 1
 for i in range(epochs):
     model.train()
     epoch_loss = 0.0
@@ -176,9 +177,14 @@ for i in range(epochs):
     )
 
 torch.save(model.state_dict(), f"./saved_models/{model_name}.ptm")
+pickle.dump(
+    [TYPE, SUBTYPE, LVL, RESPGROUP],
+    open(f"./saved_models/{model_name}_fields.pkl", "wb"),
+)
 
 
-def load_model():
+def load_model(device: torch.device):
+    print(device)
     model = SAModel(
         sequence_length,
         batch_sz,
@@ -188,16 +194,15 @@ def load_model():
         learning_rate=1e-3,
         learning_rate_decay_rate=0.98,
         independent_categoricals=[type_, subtype, lvl, respgroup],
-        device="cuda",
+        device=device,
     )
 
     chkpnt = torch.load(
-        "./saved_models/chkpnt-SIAG-EP67-TRNLOSS1dot821-2020-08-19_14-36-14.ptm"
+        "./saved_models/chkpnt-SIAG-EP2-TRNLOSS8dot439-2020-08-19_17-43-19.ptm",
+        map_location=device,
     )
+
     model.load_state_dict(chkpnt["model_state_dict"])
     model.eval()
-    model.to(model.device)
+    model.to(device)
     return model
-
-
-model = load_model()
