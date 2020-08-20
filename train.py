@@ -1,16 +1,14 @@
 import datetime
 import logging
 import pickle
+from utils import set_seed
 
+set_seed()
 import numpy as np
 
-np.random.seed(0)
 
 import torch
 
-torch.manual_seed(0)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
 
 from torch.nn.modules import loss
 from transformers import DistilBertTokenizer
@@ -32,7 +30,7 @@ torch.manual_seed(0)
 
 model_name = "SIAG_very_small"  # Seq_Ind_Acts_Generation
 
-train_logger = logging.getLogger()
+train_logger = logging.getLogger(model_name)
 train_logger.setLevel(logging.DEBUG)
 # create file handler which logs even debug messages
 fh = logging.FileHandler(f"{model_name}_training.log")
@@ -56,9 +54,7 @@ sequence_length = (
     5  # maximum number of independent category groups that make up a sequence
 )
 num_act_cats = 4  # number of independent fields in a category group
-batch_sz = (
-    8  # minibatch size, sequences of independent cat groups to be processed in parallel
-)
+batch_sz = 32  # minibatch size, sequences of independent cat groups to be processed in parallel
 rec_len = len(trnseq) // batch_sz  # num records in training set, used for batchifying
 emb_dim = 16  # embedding dim for each categorical
 embedding_dim_into_tran = (
@@ -127,13 +123,14 @@ respgroup = IndependentCategorical.from_torchtext_field("respgroup", RESPGROUP)
 
 model = SAModel(
     sequence_length,
-    batch_sz,
     emb_dim,
     num_attn_heads,
     num_dec_layers,
     learning_rate=1e-3,
     learning_rate_decay_rate=0.98,
     independent_categoricals=[type_, subtype, lvl, respgroup],
+    freeze_static_model_weights=True,
+    p_class_drop=0.1,
     device=device,
 )
 
