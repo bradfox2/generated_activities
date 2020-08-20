@@ -1,9 +1,12 @@
 settings.json
+staged_activities.csv
+*.csv
+*.xlsx
+env
 *.pyc
 *.csv
-env
-.vscode
 __pycache__
 distilbert_weights/*
 *.log
 saved_models/*
+.vscode
