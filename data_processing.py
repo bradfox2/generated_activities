@@ -87,6 +87,50 @@ def batchify_static_data(static_data, batch_sz):
     return n
 
 
+def numericalize(act_seq, *args):
+    TYPE = args[0]
+    SUBTYPE = args[1]
+    LVL = args[2]
+    RESPGROUP = args[3]
+
+    return [
+            [
+                TYPE.vocab.stoi[act[0]],
+                SUBTYPE.vocab.stoi[act[1]],
+                LVL.vocab.stoi[act[2]],
+                RESPGROUP.vocab.stoi[act[3]],
+            ]
+            for act in act_seq
+        ]
+
+
+def add_start_stop_and_numericalize_and_pad(act_seq, max_len):
+    if pandas.isna(act_seq[0][0]):
+        act_seq = [
+            [
+                TYPE.vocab.stoi[init_token],
+                SUBTYPE.vocab.stoi[init_token],
+                LVL.vocab.stoi[init_token],
+                RESPGROUP.vocab.stoi[init_token],
+            ],
+            [
+                TYPE.vocab.stoi[eos_token],
+                SUBTYPE.vocab.stoi[eos_token],
+                LVL.vocab.stoi[eos_token],
+                RESPGROUP.vocab.stoi[eos_token],
+            ],
+        ]
+        # assume type, st, lvl, rg have pad tokens that reference the same numericalized value
+        act_seq.extend([[TYPE.vocab.stoi[pad_token]] * 4] * (max_len - len(act_seq)))
+        return act_seq
+
+    else:
+        act_seq.insert(0, [init_token] * len(act_seq[0]))
+        act_seq.append([eos_token] * len(act_seq[0]))
+        act_seq.extend([[pad_token] * 4] * (max_len - len(act_seq)))
+        return numericalize(act_seq, TYPE,SUBTYPE,LVL,RESPGROUP)
+
+
 def process(
     trn_act_seqs: Series,
     trn_static_data: Series,
@@ -126,43 +170,6 @@ def process(
     )
 
     # add sequencing indicator tokens and numericalize
-
-    def add_start_stop_and_numericalize_and_pad(act_seq, max_len):
-        if pandas.isna(act_seq[0][0]):
-            act_seq = [
-                [
-                    TYPE.vocab.stoi[init_token],
-                    SUBTYPE.vocab.stoi[init_token],
-                    LVL.vocab.stoi[init_token],
-                    RESPGROUP.vocab.stoi[init_token],
-                ],
-                [
-                    TYPE.vocab.stoi[eos_token],
-                    SUBTYPE.vocab.stoi[eos_token],
-                    LVL.vocab.stoi[eos_token],
-                    RESPGROUP.vocab.stoi[eos_token],
-                ],
-            ]
-            # assume type, st, lvl, rg have pad tokens that reference the same numericalized value
-            act_seq.extend(
-                [[TYPE.vocab.stoi[pad_token]] * 4] * (max_len - len(act_seq))
-            )
-            return act_seq
-
-        else:
-            act_seq.insert(0, [init_token] * len(act_seq[0]))
-            act_seq.append([eos_token] * len(act_seq[0]))
-            act_seq.extend([[pad_token] * 4] * (max_len - len(act_seq)))
-            return [
-                [
-                    TYPE.vocab.stoi[act[0]],
-                    SUBTYPE.vocab.stoi[act[1]],
-                    LVL.vocab.stoi[act[2]],
-                    RESPGROUP.vocab.stoi[act[3]],
-                ]
-                for act in act_seq
-            ]
-
     trn_act_seqs = truncate_series_by_len(
         trn_act_seqs, max_len - 2
     )  # leave 2 spaces for sos and eos tokens
@@ -179,16 +186,6 @@ def process(
     )
     shuffled_num_seqs_tst = tst_act_seqs.apply(len).sample(frac=1).index
     numer_tst_act_seqs = numer_tst_act_seqs.reindex(shuffled_num_seqs_tst)
-
-    # from transformers import LongformerTokenizer
-    from transformers import DistilBertTokenizer
-
-    # tokenizer = LongformerTokenizer.from_pretrained("allenai/longformer-base-4096")
-    # numer_trn_static_data = trn_static_data["DESCR"].apply(tokenizer.encode)
-    # numer_tst_static_data = tst_static_data["DESCR"].apply(tokenizer.encode)
-    # tokenizer = DistilBertTokenizer.from_pretrained(
-    #     "distilbert-base-uncased", return_tensors="pt", pad_token="<pad>"
-    # )
 
     numer_trn_static_data = trn_static_data["DESCR"].fillna("<unk>")  # .apply(
     # lambda x: tokenizer.encode(x[:512])
