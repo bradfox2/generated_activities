@@ -119,6 +119,8 @@ class SAModel(nn.Module):
         self.weight_initrange = 0.1
         self._generate_embedding_layers()
         self._generate_classification_layers()
+        self.apply(self._init_weights)
+
         self._generate_loss_criterion()
         self.cat_emb_layer_norm = nn.LayerNorm(
             self.categorical_embedding_dim * self.num_independent_categoricals
@@ -217,19 +219,14 @@ class SAModel(nn.Module):
             ]
         )
 
-    def _init_weights(self):
-        " Initialize weights appropriate for transformer for each linear and embedding layer."
-        for _, layer in self.cat_embeddings.items():
-            layer.weight.data.uniform_(-self.weight_initrange, self.weight_initrange)
-
-        for _, layer in self.cat_linear_classifiers.items():
-            layer.weight.data.uniform_(-self.weight_initrange, self.weight_initrange)
-            layer.bias.data.zero_()
-
-        self.cat_emb_expand.weight.data.uniform_(
-            -self.weight_initrange, self.weight_initrange
-        )
-        self.cat_emb_expand.bias.data.zero_()
+    def _init_weights(self, module):
+        if isinstance(module, (nn.Linear, nn.Embedding)):
+            module.weight.data.normal_(mean=0.0, std=0.02)
+            if isinstance(module, nn.Linear) and module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
 
     def _generate_square_target_mask(self, seq_len):
         """ Generates a top right triangle square mask of the target sequence.  
