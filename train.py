@@ -11,6 +11,7 @@ set_seed(0)
 
 from torch.nn.modules import loss
 from transformers import DistilBertTokenizer
+from torch.utils.tensorboard import SummaryWriter
 
 from data_processing import (
     LVL,
@@ -42,6 +43,8 @@ ch.setFormatter(formatter)
 # add the handlers to the train_logger
 train_logger.addHandler(fh)
 train_logger.addHandler(ch)
+
+writer = SummaryWriter()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -92,7 +95,7 @@ def gen_inp_data_set(seq_data: torch.Tensor, static_data: np.array):
         yield inp, target, static_data[i]
 
 
-def validate():
+def validate(batch_iter: int):
     model.eval()
     with torch.no_grad():
         val_loss = 0.0
@@ -109,7 +112,9 @@ def validate():
             # field_printer(SUBTYPE, preds[1], tgt[..., 1])
             # field_printer(LVL, preds[2], tgt[..., 2])
             # field_printer(RESPGROUP, preds[3], tgt[..., 3])
-        return val_loss.item() / len(seq_data_tst)
+        vl = val_loss.item() / len(seq_data_tst)
+        writer.add_scalar("Test/Loss", vl)
+        return vl
 
 
 type_ = IndependentCategorical.from_torchtext_field("type_", TYPE)
@@ -117,6 +122,12 @@ subtype = IndependentCategorical.from_torchtext_field("subtype", SUBTYPE)
 lvl = IndependentCategorical.from_torchtext_field("lvl", LVL)
 respgroup = IndependentCategorical.from_torchtext_field("respgroup", RESPGROUP)
 
+
+static_tokenizer = DistilBertTokenizer.from_pretrained(
+    "distilbert-base-uncased",
+    return_tensors="pt",
+    vocab_file="./distilbert_weights/sean_vocab.txt",
+)
 
 model = SAModel(
     sequence_length,
@@ -128,15 +139,24 @@ model = SAModel(
     independent_categoricals=[type_, subtype, lvl, respgroup],
     freeze_static_model_weights=True,
     p_class_drop=0.1,
-    device=device,
+    device=torch.device("cpu"),
 )
 
-static_tokenizer = DistilBertTokenizer.from_pretrained(
-    "distilbert-base-uncased",
-    return_tensors="pt",
-    vocab_file="./distilbert_weights/sean_vocab.txt",
+# add network to tensorboard
+seqd, _, statd = next(gen_inp_data_set(seq_data_trn, static_data_trn))
+writer.add_graph(
+    model,
+    [
+        seqd,
+        {
+            k: v
+            for k, v in static_tokenizer(
+                statd.tolist(), padding=True, truncation=True, return_tensors="pt"
+            ).items()
+        },
+    ],
 )
-
+writer.close()
 
 model.to(device)
 log_interval = 100
@@ -160,12 +180,15 @@ for i in range(epochs):
             train_logger.info(f"Epoch: {i}")
             train_logger.info(f"Record: {counter}/{rec_len}")
             train_logger.info(f"LR: {model.scheduler.get_last_lr()[0]}")
-            train_logger.info(f"Loss: {(epoch_loss / log_interval):.3f}")
+            tloss = epoch_loss / log_interval
+            writer.add_scalar("Train/Loss", tloss)
+            train_logger.info(f"Loss: {tloss:.3f}")
             epoch_loss = 0.0
     epoch_avg_loss = sum(loss_tracker) / len(loss_tracker)
     train_loss_record.append(epoch_avg_loss)
 
-    train_logger.info(f"Validation Loss: {validate():.3f}")
+    vl = validate(i)
+    train_logger.info(f"Validation Loss: {vl:.3f}")
 
     # save checkpoint
     checkpoint_path = f"./saved_models/chkpnt-{model_name}-EP{i}-TRNLOSS{str(epoch_avg_loss)[:5].replace('.','dot')}-{datetime.datetime.today().strftime('%Y-%m-%d %H-%M-%S')}.ptm"
