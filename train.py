@@ -132,7 +132,7 @@ model = SAModel(
 static_tokenizer = DistilBertTokenizer.from_pretrained(
     "distilbert-base-uncased",
     return_tensors="pt",
-    vocab_file="./distilbert_weights/sean_vocab.txt",
+    vocab_file="./distilbert_weights/vocab.txt",
 )
 
 
