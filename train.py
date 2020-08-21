@@ -3,12 +3,11 @@ import logging
 import pickle
 from utils import set_seed
 
-set_seed()
+
 import numpy as np
-
-
 import torch
 
+set_seed(0)
 
 from torch.nn.modules import loss
 from transformers import DistilBertTokenizer
@@ -25,8 +24,6 @@ from data_processing import (
 from load_staged_acts import get_dat_data
 from model import IndependentCategorical, SAModel
 from utils import field_printer
-
-torch.manual_seed(0)
 
 model_name = "SIAG_very_small"  # Seq_Ind_Acts_Generation
 
@@ -54,14 +51,14 @@ sequence_length = (
     5  # maximum number of independent category groups that make up a sequence
 )
 num_act_cats = 4  # number of independent fields in a category group
-batch_sz = 32  # minibatch size, sequences of independent cat groups to be processed in parallel
+batch_sz = 64  # minibatch size, sequences of independent cat groups to be processed in parallel
 rec_len = len(trnseq) // batch_sz  # num records in training set, used for batchifying
 emb_dim = 16  # embedding dim for each categorical
 embedding_dim_into_tran = (
     emb_dim * num_act_cats
 )  # embedding dim size into transformer layers
-num_attn_heads = 1  # number of transformer attention heads
-num_dec_layers = 1  # number of transformer decoder layers (main layers)
+num_attn_heads = 4  # number of transformer attention heads
+num_dec_layers = 2  # number of transformer decoder layers (main layers)
 bptt = sequence_length  # back prop through time or sequence length, how far the lookback window goes
 
 # tokenize, truncate, pad
@@ -135,7 +132,9 @@ model = SAModel(
 )
 
 static_tokenizer = DistilBertTokenizer.from_pretrained(
-    "distilbert-base-uncased", return_tensors="pt"
+    "distilbert-base-uncased",
+    return_tensors="pt",
+    vocab_file="./distilbert_weights/sean_vocab.txt",
 )
 
 
