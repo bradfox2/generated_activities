@@ -18,9 +18,7 @@ sequence_length = (
     5  # maximum number of independent category groups that make up a sequence
 )
 num_act_cats = 4  # number of independent fields in a category group
-batch_sz = (
-    8  # minibatch size, sequences of independent cat groups to be processed in parallel
-)
+batch_sz = 32  # minibatch size, sequences of independent cat groups to be processed in parallel
 emb_dim = 16  # embedding dim for each categorical
 embedding_dim_into_tran = (
     emb_dim * num_act_cats
@@ -49,7 +47,6 @@ respgroup = IndependentCategorical.from_torchtext_field("respgroup", RESPGROUP)
 
 model = SAModel(
     sequence_length,
-    batch_sz,
     emb_dim,
     num_attn_heads,
     num_dec_layers,

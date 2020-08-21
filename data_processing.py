@@ -94,14 +94,14 @@ def numericalize(act_seq, *args):
     RESPGROUP = args[3]
 
     return [
-            [
-                TYPE.vocab.stoi[act[0]],
-                SUBTYPE.vocab.stoi[act[1]],
-                LVL.vocab.stoi[act[2]],
-                RESPGROUP.vocab.stoi[act[3]],
-            ]
-            for act in act_seq
+        [
+            TYPE.vocab.stoi[act[0]],
+            SUBTYPE.vocab.stoi[act[1]],
+            LVL.vocab.stoi[act[2]],
+            RESPGROUP.vocab.stoi[act[3]],
         ]
+        for act in act_seq
+    ]
 
 
 def add_start_stop_and_numericalize_and_pad(act_seq, max_len):
@@ -128,7 +128,7 @@ def add_start_stop_and_numericalize_and_pad(act_seq, max_len):
         act_seq.insert(0, [init_token] * len(act_seq[0]))
         act_seq.append([eos_token] * len(act_seq[0]))
         act_seq.extend([[pad_token] * 4] * (max_len - len(act_seq)))
-        return numericalize(act_seq, TYPE,SUBTYPE,LVL,RESPGROUP)
+        return numericalize(act_seq, TYPE, SUBTYPE, LVL, RESPGROUP)
 
 
 def process(
@@ -187,10 +187,10 @@ def process(
     shuffled_num_seqs_tst = tst_act_seqs.apply(len).sample(frac=1).index
     numer_tst_act_seqs = numer_tst_act_seqs.reindex(shuffled_num_seqs_tst)
 
-    numer_trn_static_data = trn_static_data["DESCR"].fillna("<unk>")  # .apply(
+    numer_trn_static_data = trn_static_data["TEXT"].fillna("<unk>")  # .apply(
     # lambda x: tokenizer.encode(x[:512])
     # )
-    numer_tst_static_data = tst_static_data["DESCR"].fillna("<unk>")  # .apply(
+    numer_tst_static_data = tst_static_data["TEXT"].fillna("<unk>")  # .apply(
     # lambda x: tokenizer.encode(x[:512])
     # )
 

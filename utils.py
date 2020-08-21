@@ -41,3 +41,14 @@ def get_field_term_weights(field: torchtext.data.field) -> torch.Tensor:
             for i in field.vocab.itos
         ]
     )
+
+
+import random
+import numpy as np
+
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)

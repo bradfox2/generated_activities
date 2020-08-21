@@ -32,19 +32,25 @@ class IndependentCategorical(object):
         return IndependentCategorical(name, num_levels, padding_idx, term_weights)
 
 
+class SAModelConfig(object):
+    pass
+
+
 class SAModel(nn.Module):
     def __init__(
         self,
         sequence_length: int,
-        batch_sz: int,
         categorical_embedding_dim: int,
         num_attn_heads: int,
         num_transformer_layers: int,
         learning_rate: float,
         learning_rate_decay_rate: float,
         independent_categoricals: List[IndependentCategorical],
+        freeze_static_model_weights: bool,
+        p_class_drop: float = 0.1,
         static_data_embedding_size: int = 768,
         device: torch.device = torch.device("cpu"),
+        freeze_static_model_weights=True,
     ) -> None:
 
         super(SAModel, self).__init__()
@@ -55,6 +61,12 @@ class SAModel(nn.Module):
         self.independent_categoricals = independent_categoricals
         self.device = device
         self.num_independent_categoricals = len(independent_categoricals)
+        assert (
+            self.categorical_embedding_dim
+            * self.num_independent_categoricals
+            % self.num_attn_heads
+            == 0
+        )
         self.transformer_dim_sz = (
             categorical_embedding_dim * self.num_independent_categoricals
         )
@@ -73,6 +85,7 @@ class SAModel(nn.Module):
         self.transformer_decoder = nn.TransformerDecoder(
             self.transformer_decoder_layer, self.num_transformer_layers
         )
+        self.classification_tnsr_drop = nn.Dropout(p_class_drop)
         self.optimizer = torch.optim.AdamW(self.parameters())
 
         try:
@@ -86,6 +99,11 @@ class SAModel(nn.Module):
                 )
             except Exception as e:
                 raise (e)
+
+        if freeze_static_model_weights:
+            for param in self.static_data_model.parameters():
+                param.requires_grad = False
+
         self.static_data_embedding_size = static_data_embedding_size
         self.static_data_squeeze = nn.Linear(
             self.static_data_embedding_size, self.transformer_dim_sz
@@ -127,8 +145,7 @@ class SAModel(nn.Module):
             )
             target = targets[..., idx].flatten()
             crit = self.loss_criteria[idx]
-            _loss = crit(pred, target)
-            loss = _loss if not loss else loss + _loss
+            loss = crit(pred, target) if not loss else crit(pred, target) + loss
         return loss
 
     def _generate_classification_layers(self):
@@ -203,7 +220,7 @@ class SAModel(nn.Module):
             cat_embeddings_list.append(embedding(data[..., idx]))
 
         cats_combined_embedding = torch.cat(cat_embeddings_list, dim=2)
-        cat_embs_nrm = self.cat_emb_layer_norm(cats_combined_embedding)
+        # cat_embs_nrm = self.cat_emb_layer_norm(cats_combined_embedding)
 
         if self.training:
             tgt_key_padding_mask = data == tgt_pad_idx
@@ -214,12 +231,13 @@ class SAModel(nn.Module):
             self.mask = None
 
         tfmr_out = self.transformer_decoder(
-            cat_embs_nrm,
+            cats_combined_embedding,
             memory=static_data_embedding_squeeze,
             tgt_mask=self.mask,
             tgt_key_padding_mask=tgt_key_padding_mask,
         )
 
+        tfmr_out = self.classification_tnsr_drop(tfmr_out)
         classification_layer_outputs = []
         for classification_layer in self.cat_linear_classifiers:
             classification_layer_outputs.append(classification_layer(tfmr_out))

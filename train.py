@@ -1,16 +1,13 @@
 import datetime
 import logging
 import pickle
+from utils import set_seed
+
 
 import numpy as np
-
-np.random.seed(0)
-
 import torch
 
-torch.manual_seed(0)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
+set_seed(0)
 
 from transformers import DistilBertTokenizer
 
@@ -26,11 +23,9 @@ from data_processing import (
 from load_staged_acts import get_dat_data
 from model import IndependentCategorical, SAModel
 
-torch.manual_seed(0)
-
 model_name = "SIAG_very_small"  # Seq_Ind_Acts_Generation
 
-train_logger = logging.getLogger()
+train_logger = logging.getLogger(model_name)
 train_logger.setLevel(logging.DEBUG)
 # create file handler which logs even debug messages
 fh = logging.FileHandler(f"{model_name}_training.log")
@@ -54,16 +49,14 @@ sequence_length = (
     5  # maximum number of independent category groups that make up a sequence
 )
 num_act_cats = 4  # number of independent fields in a category group
-batch_sz = (
-    8  # minibatch size, sequences of independent cat groups to be processed in parallel
-)
+batch_sz = 64  # minibatch size, sequences of independent cat groups to be processed in parallel
 rec_len = len(trnseq) // batch_sz  # num records in training set, used for batchifying
 emb_dim = 16  # embedding dim for each categorical
 embedding_dim_into_tran = (
     emb_dim * num_act_cats
 )  # embedding dim size into transformer layers
-num_attn_heads = 1  # number of transformer attention heads
-num_dec_layers = 1  # number of transformer decoder layers (main layers)
+num_attn_heads = 4  # number of transformer attention heads
+num_dec_layers = 2  # number of transformer decoder layers (main layers)
 bptt = sequence_length  # back prop through time or sequence length, how far the lookback window goes
 
 # tokenize, truncate, pad
@@ -125,18 +118,21 @@ respgroup = IndependentCategorical.from_torchtext_field("respgroup", RESPGROUP)
 
 model = SAModel(
     sequence_length,
-    batch_sz,
     emb_dim,
     num_attn_heads,
     num_dec_layers,
     learning_rate=1e-3,
     learning_rate_decay_rate=0.98,
     independent_categoricals=[type_, subtype, lvl, respgroup],
+    freeze_static_model_weights=True,
+    p_class_drop=0.1,
     device=device,
 )
 
 static_tokenizer = DistilBertTokenizer.from_pretrained(
-    "distilbert-base-uncased", return_tensors="pt"
+    "distilbert-base-uncased",
+    return_tensors="pt",
+    vocab_file="./distilbert_weights/sean_vocab.txt",
 )
 
 
