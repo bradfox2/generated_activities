@@ -11,7 +11,7 @@ import transformers
 from torch.tensor import Tensor
 from torchtext.data.field import Field
 from transformers import DistilBertModel, DistilBertTokenizer
-
+import math
 from utils import get_field_term_weights
 
 
@@ -36,12 +36,33 @@ class SAModelConfig(object):
     pass
 
 
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
+        )
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer("pe", pe)
+
+    def forward(self, x):
+        x = x + self.pe[: x.size(0), :]
+        return self.dropout(x)
+
+
 class SAModel(nn.Module):
     def __init__(
         self,
         sequence_length: int,
         categorical_embedding_dim: int,
         num_attn_heads: int,
+        num_hidden: int,
         num_transformer_layers: int,
         learning_rate: float,
         learning_rate_decay_rate: float,
@@ -50,13 +71,14 @@ class SAModel(nn.Module):
         p_class_drop: float = 0.1,
         static_data_embedding_size: int = 768,
         device: torch.device = torch.device("cpu"),
-        freeze_static_model_weights=True,
+        dropout: float = 0.5,
     ) -> None:
 
         super(SAModel, self).__init__()
         self.sequence_length = sequence_length
         self.categorical_embedding_dim = categorical_embedding_dim
         self.num_attn_heads = num_attn_heads
+        self.num_hidden = num_hidden
         self.num_transformer_layers = num_transformer_layers
         self.independent_categoricals = independent_categoricals
         self.device = device
@@ -74,19 +96,23 @@ class SAModel(nn.Module):
         self._generate_embedding_layers()
         self._generate_classification_layers()
         self._generate_loss_criterion()
+        self._init_weights()
         self.cat_emb_layer_norm = nn.LayerNorm(
             self.categorical_embedding_dim * self.num_independent_categoricals
         )
-
+        self.dropout = dropout
         self.mask = None
         self.transformer_decoder_layer = nn.TransformerDecoderLayer(
-            self.transformer_dim_sz, self.num_attn_heads
+            self.transformer_dim_sz, self.num_attn_heads, self.num_hidden, self.dropout
         )
         self.transformer_decoder = nn.TransformerDecoder(
             self.transformer_decoder_layer, self.num_transformer_layers
         )
-        self.classification_tnsr_drop = nn.Dropout(p_class_drop)
+        self.classification_tnsr_drop = nn.Dropout(dropout)
         self.optimizer = torch.optim.AdamW(self.parameters())
+        self.pos_encoder = PositionalEncoding(
+            self.num_independent_categoricals * self.categorical_embedding_dim, dropout
+        )
 
         try:
             self.static_data_model = DistilBertModel.from_pretrained(
@@ -173,17 +199,12 @@ class SAModel(nn.Module):
 
     def _init_weights(self):
         " Initialize weights appropriate for transformer for each linear and embedding layer."
-        for _, layer in self.cat_embeddings.items():
+        for layer in self.cat_embeddings:
             layer.weight.data.uniform_(-self.weight_initrange, self.weight_initrange)
 
-        for _, layer in self.cat_linear_classifiers.items():
+        for layer in self.cat_linear_classifiers:
             layer.weight.data.uniform_(-self.weight_initrange, self.weight_initrange)
             layer.bias.data.zero_()
-
-        self.cat_emb_expand.weight.data.uniform_(
-            -self.weight_initrange, self.weight_initrange
-        )
-        self.cat_emb_expand.bias.data.zero_()
 
     def _generate_square_target_mask(self, seq_len):
         """ Generates a top right triangle square mask of the target sequence.  
@@ -219,7 +240,10 @@ class SAModel(nn.Module):
         for idx, embedding in enumerate(self.cat_embeddings):
             cat_embeddings_list.append(embedding(data[..., idx]))
 
-        cats_combined_embedding = torch.cat(cat_embeddings_list, dim=2)
+        cats_combined_embedding = torch.cat(cat_embeddings_list, dim=2) * math.sqrt(
+            self.transformer_dim_sz
+        )
+        cats_combined_embedding = self.pos_encoder(cats_combined_embedding)
         # cat_embs_nrm = self.cat_emb_layer_norm(cats_combined_embedding)
 
         if self.training:

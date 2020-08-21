@@ -117,10 +117,11 @@ respgroup = IndependentCategorical.from_torchtext_field("respgroup", RESPGROUP)
 
 
 model = SAModel(
-    sequence_length,
-    emb_dim,
-    num_attn_heads,
-    num_dec_layers,
+    sequence_length=sequence_length,
+    categorical_embedding_dim=emb_dim,
+    num_attn_heads=num_attn_heads,
+    num_hidden=200,
+    num_transformer_layers=num_dec_layers,
     learning_rate=1e-3,
     learning_rate_decay_rate=0.98,
     independent_categoricals=[type_, subtype, lvl, respgroup],
@@ -132,7 +133,7 @@ model = SAModel(
 static_tokenizer = DistilBertTokenizer.from_pretrained(
     "distilbert-base-uncased",
     return_tensors="pt",
-    vocab_file="./distilbert_weights/sean_vocab.txt",
+    vocab_file="./distilbert_weights/vocab.txt",
 )
 
 
