@@ -71,7 +71,10 @@ class SAModel(nn.Module):
         p_class_drop: float = 0.1,
         static_data_embedding_size: int = 768,
         device: torch.device = torch.device("cpu"),
+<<<<<<< HEAD
         dropout: float = 0.5,
+=======
+>>>>>>> master
     ) -> None:
 
         super(SAModel, self).__init__()
