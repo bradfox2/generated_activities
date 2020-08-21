@@ -36,6 +36,8 @@ model = torch.load(f"./saved_models/{model_name}.ptm", map_location="cpu")
 
 TYPE, SUBTYPE, LVL, RESPGROUP = pickle.load(open(f"./saved_models/{fields}", "rb"))
 
+model_conf = pickle.load(open(f"./saved_models/model_conf_{model_name}.pkl", 'rb'))
+
 static_tokenizer = DistilBertTokenizer.from_pretrained(
     "distilbert-base-uncased", return_tensors="pt"
 )
@@ -46,14 +48,7 @@ lvl = IndependentCategorical.from_torchtext_field("lvl", LVL)
 respgroup = IndependentCategorical.from_torchtext_field("respgroup", RESPGROUP)
 
 model = SAModel(
-    sequence_length,
-    batch_sz,
-    emb_dim,
-    num_attn_heads,
-    num_dec_layers,
-    learning_rate=1e-3,
-    learning_rate_decay_rate=0.98,
-    independent_categoricals=[type_, subtype, lvl, respgroup],
+    model_conf,
     device=torch.device("cpu"),
 )
 
