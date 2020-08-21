@@ -23,6 +23,9 @@ from data_processing import (
 from load_staged_acts import get_dat_data
 from model import IndependentCategorical, SAModel, SAModelConfig
 from model import VerySmallSAModel
+import uuid
+
+model_name = uuid.uuid4().hex  # Seq_Ind_Acts_Generation
 
 train_logger = logging.getLogger(model_name)
 train_logger.setLevel(logging.DEBUG)
@@ -56,10 +59,6 @@ sequence_length = (
     numer_trn_static_data,
     numer_tst_static_data,
 ) = process(trnseq, trnstat, tstseq, tststat, sequence_length + 1)
-
-import uuid
-
-uuid.uuid4().hex
 
 
 assert len(numer_trn_act_seqs) == len(numer_trn_static_data)
@@ -113,9 +112,6 @@ def validate():
             # field_printer(LVL, preds[2], tgt[..., 2])
             # field_printer(RESPGROUP, preds[3], tgt[..., 3])
         return val_loss.item() / len(seq_data_tst)
-
-
-model_name = uuid.uuid4().hex  # Seq_Ind_Acts_Generation
 
 
 model_conf = SAModelConfig(

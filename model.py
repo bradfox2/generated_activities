@@ -53,7 +53,7 @@ class SAModelConfig(object):
         self.freeze_static_model_weights = freeze_static_model_weights
         self.categorical_embedding_dim = categorical_embedding_dim
         self.num_attn_heads = num_attn_heads
-        self.num_transfomers_layers = num_transformer_layers
+        self.num_transformer_layers = num_transformer_layers
 
         self.num_act_cats = len(self.independent_categoricals)
 
