@@ -9,7 +9,6 @@ import torch
 
 set_seed(0)
 
-from torch.nn.modules import loss
 from transformers import DistilBertTokenizer
 
 from data_processing import (
@@ -22,10 +21,8 @@ from data_processing import (
     process,
 )
 from load_staged_acts import get_dat_data
-from model import IndependentCategorical, SAModel
-from utils import field_printer
-
-model_name = "SIAG_very_small"  # Seq_Ind_Acts_Generation
+from model import IndependentCategorical, SAModel, SAModelConfig
+from model import VerySmallSAModel
 
 train_logger = logging.getLogger(model_name)
 train_logger.setLevel(logging.DEBUG)
@@ -47,21 +44,12 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 trnseq, tstseq, trnstat, tststat = get_dat_data(split_frac=0.8)
 
+# tokenize, truncate, pad
+# TODO: this function call has side-effects, on TYPE, SUBTYPE, LVL, RESPGROUP objects
 sequence_length = (
     5  # maximum number of independent category groups that make up a sequence
 )
-num_act_cats = 4  # number of independent fields in a category group
-batch_sz = 64  # minibatch size, sequences of independent cat groups to be processed in parallel
-rec_len = len(trnseq) // batch_sz  # num records in training set, used for batchifying
-emb_dim = 16  # embedding dim for each categorical
-embedding_dim_into_tran = (
-    emb_dim * num_act_cats
-)  # embedding dim size into transformer layers
-num_attn_heads = 4  # number of transformer attention heads
-num_dec_layers = 2  # number of transformer decoder layers (main layers)
-bptt = sequence_length  # back prop through time or sequence length, how far the lookback window goes
 
-# tokenize, truncate, pad
 (
     numer_trn_act_seqs,
     numer_tst_act_seqs,
@@ -69,10 +57,25 @@ bptt = sequence_length  # back prop through time or sequence length, how far the
     numer_tst_static_data,
 ) = process(trnseq, trnstat, tstseq, tststat, sequence_length + 1)
 
+import uuid
+
+uuid.uuid4().hex
+
+
 assert len(numer_trn_act_seqs) == len(numer_trn_static_data)
 assert numer_trn_act_seqs.index[0] == numer_trn_static_data.index[0]
 
+type_ = IndependentCategorical.from_torchtext_field("type_", TYPE)
+subtype = IndependentCategorical.from_torchtext_field("subtype", SUBTYPE)
+lvl = IndependentCategorical.from_torchtext_field("lvl", LVL)
+respgroup = IndependentCategorical.from_torchtext_field("respgroup", RESPGROUP)
+
+
+batch_sz = 64  # minibatch size, sequences of independent cat groups to be processed in parallel
+rec_len = len(trnseq) // batch_sz  # num records in training set, used for batchifying
+
 seq_data_trn = batchify_act_seqs(numer_trn_act_seqs, batch_sz).contiguous().to(device)
+
 seq_data_tst = batchify_act_seqs(numer_tst_act_seqs, batch_sz).contiguous().to(device)
 
 static_data_trn = batchify_static_data(
@@ -112,31 +115,27 @@ def validate():
         return val_loss.item() / len(seq_data_tst)
 
 
-type_ = IndependentCategorical.from_torchtext_field("type_", TYPE)
-subtype = IndependentCategorical.from_torchtext_field("subtype", SUBTYPE)
-lvl = IndependentCategorical.from_torchtext_field("lvl", LVL)
-respgroup = IndependentCategorical.from_torchtext_field("respgroup", RESPGROUP)
+model_name = uuid.uuid4().hex  # Seq_Ind_Acts_Generation
 
 
-model = SAModel(
-    sequence_length,
-    emb_dim,
-    num_attn_heads,
-    num_dec_layers,
-    learning_rate=1e-3,
-    learning_rate_decay_rate=0.98,
+model_conf = SAModelConfig(
+    model_name=model_name,
+    sequence_length=sequence_length,
     independent_categoricals=[type_, subtype, lvl, respgroup],
+    static_data_embedding_size=768,
     freeze_static_model_weights=True,
-    p_class_drop=0.1,
-    device=device,
+    categorical_embedding_dim=32,
+    num_attn_heads=4,
+    num_transformer_layers=2,
 )
+
+model = SAModel(config=model_conf, device=device)
 
 static_tokenizer = DistilBertTokenizer.from_pretrained(
     "distilbert-base-uncased",
     return_tensors="pt",
     vocab_file="./distilbert_weights/sean_vocab.txt",
 )
-
 
 model.to(device)
 log_interval = 100
@@ -149,10 +148,10 @@ for i in range(epochs):
     loss_tracker = []
     data_gen = gen_inp_data_set(seq_data_trn, static_data_trn)
     for data, tgt, static_data in data_gen:
-        static_data = static_tokenizer(
+        static_data_tok = static_tokenizer(
             static_data.tolist(), padding=True, truncation=True, return_tensors="pt"
         ).to(device)
-        batch_loss = model.learn(data, static_data, tgt)
+        batch_loss = model.learn(data, static_data_tok, tgt)
         epoch_loss += batch_loss
         counter += 1
         if counter % log_interval == 0:
@@ -187,9 +186,13 @@ pickle.dump(
     [TYPE, SUBTYPE, LVL, RESPGROUP],
     open(f"./saved_models/{model_name}_fields.pkl", "wb"),
 )
+pickle.dump(
+    model_conf, open(f"./saved_models/model_conf_{model_conf.model_name}.pkl", "wb")
+)
 
 
 def load_model(device: torch.device):
+    # TODO: this is broke now
     model = SAModel(
         sequence_length,
         batch_sz,

@@ -3,7 +3,7 @@ import pickle
 import pandas
 import torch
 from transformers import DistilBertTokenizer
-from model import SAModel, IndependentCategorical
+from model import SAModel, IndependentCategorical, SAModelConfig
 
 from data_processing import (
     LVL,
@@ -47,6 +47,7 @@ respgroup = IndependentCategorical.from_torchtext_field("respgroup", RESPGROUP)
 
 model = SAModel(
     sequence_length,
+    batch_sz,
     emb_dim,
     num_attn_heads,
     num_dec_layers,

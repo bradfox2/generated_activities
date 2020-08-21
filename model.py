@@ -2,7 +2,6 @@
 ie. ['sos','sos'] -> ['t1', 's1'] where t and s are from different categorical sets, 
 but where value of  s1 is dependent on t1
 """
-
 from typing import List
 
 import torch
@@ -10,8 +9,7 @@ import torch.nn as nn
 import transformers
 from torch.tensor import Tensor
 from torchtext.data.field import Field
-from transformers import DistilBertModel, DistilBertTokenizer
-
+from transformers import DistilBertModel
 from utils import get_field_term_weights
 
 
@@ -33,34 +31,82 @@ class IndependentCategorical(object):
 
 
 class SAModelConfig(object):
-    pass
+    p_class_drop = 0.1
+    learning_rate_decay_rate = 0.98
+
+    def __init__(
+        self,
+        model_name: str,
+        sequence_length: int,
+        independent_categoricals: List[IndependentCategorical],
+        static_data_embedding_size: int,
+        freeze_static_model_weights: bool,
+        categorical_embedding_dim: int,
+        num_attn_heads: int,
+        num_transformer_layers: int,
+        **kwargs
+    ) -> None:
+        self.model_name = model_name
+        self.sequence_length = sequence_length
+        self.independent_categoricals = independent_categoricals
+        self.static_data_embedding_size = static_data_embedding_size
+        self.freeze_static_model_weights = freeze_static_model_weights
+        self.categorical_embedding_dim = categorical_embedding_dim
+        self.num_attn_heads = num_attn_heads
+        self.num_transfomers_layers = num_transformer_layers
+
+        self.num_act_cats = len(self.independent_categoricals)
+
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+    def __repr__(self):
+        return str(self.__dict__)
+
+
+class LargeSAModel(SAModelConfig):
+    model_name = "LargeSAModel"
+    batch_sz = 32
+    categorical_embedding_dim = 128
+    num_attn_heads = 8
+    num_transfomers_layers = 6
+    static_data_embedding_size = 768
+
+    def __init__(self, **kwargs) -> None:
+        super(LargeSAModel, self).__init__(**kwargs)
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+
+class VerySmallSAModel(SAModelConfig):
+    model_name = "VerySmallSAModel"
+    batch_sz = 128
+    categorical_embedding_dim = 16
+    num_attn_heads = 2
+    num_transfomers_layers = 1
+    learning_rate_decay_rate = 0.98
+    static_data_embedding_size = 768
+
+    def __init__(self, **kwargs) -> None:
+        super(VerySmallSAModel, self).__init__(**kwargs)
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
 
 class SAModel(nn.Module):
     def __init__(
-        self,
-        sequence_length: int,
-        categorical_embedding_dim: int,
-        num_attn_heads: int,
-        num_transformer_layers: int,
-        learning_rate: float,
-        learning_rate_decay_rate: float,
-        independent_categoricals: List[IndependentCategorical],
-        freeze_static_model_weights: bool,
-        p_class_drop: float = 0.1,
-        static_data_embedding_size: int = 768,
-        device: torch.device = torch.device("cpu"),
-        freeze_static_model_weights=True,
+        self, config: SAModelConfig, device: torch.device = torch.device("cpu"),
     ) -> None:
 
         super(SAModel, self).__init__()
-        self.sequence_length = sequence_length
-        self.categorical_embedding_dim = categorical_embedding_dim
-        self.num_attn_heads = num_attn_heads
-        self.num_transformer_layers = num_transformer_layers
-        self.independent_categoricals = independent_categoricals
+        self.sequence_length = config.sequence_length
+        self.categorical_embedding_dim = config.categorical_embedding_dim
+        self.num_attn_heads = config.num_attn_heads
+        self.num_transformer_layers = config.num_transformer_layers
+        self.independent_categoricals = config.independent_categoricals
+        self.p_class_drop = config.p_class_drop
         self.device = device
-        self.num_independent_categoricals = len(independent_categoricals)
+        self.num_independent_categoricals = len(config.independent_categoricals)
         assert (
             self.categorical_embedding_dim
             * self.num_independent_categoricals
@@ -68,7 +114,7 @@ class SAModel(nn.Module):
             == 0
         )
         self.transformer_dim_sz = (
-            categorical_embedding_dim * self.num_independent_categoricals
+            self.categorical_embedding_dim * self.num_independent_categoricals
         )
         self.weight_initrange = 0.1
         self._generate_embedding_layers()
@@ -85,7 +131,7 @@ class SAModel(nn.Module):
         self.transformer_decoder = nn.TransformerDecoder(
             self.transformer_decoder_layer, self.num_transformer_layers
         )
-        self.classification_tnsr_drop = nn.Dropout(p_class_drop)
+        self.classification_tnsr_drop = nn.Dropout(self.p_class_drop)
         self.optimizer = torch.optim.AdamW(self.parameters())
 
         try:
@@ -100,18 +146,18 @@ class SAModel(nn.Module):
             except Exception as e:
                 raise (e)
 
-        if freeze_static_model_weights:
+        if config.freeze_static_model_weights:
             for param in self.static_data_model.parameters():
                 param.requires_grad = False
 
-        self.static_data_embedding_size = static_data_embedding_size
+        self.static_data_embedding_size = config.static_data_embedding_size
         self.static_data_squeeze = nn.Linear(
             self.static_data_embedding_size, self.transformer_dim_sz
         )
         self.static_data_layer_norm = nn.LayerNorm(self.transformer_dim_sz)
 
         self.scheduler = torch.optim.lr_scheduler.StepLR(
-            self.optimizer, 5.0, learning_rate_decay_rate
+            self.optimizer, 5.0, config.learning_rate_decay_rate
         )
         self.static_optimizer = transformers.AdamW(
             self.static_data_model.parameters(), lr=1e-5
@@ -228,7 +274,7 @@ class SAModel(nn.Module):
             tgt_key_padding_mask = tgt_key_padding_mask.permute(1, 0, 2)[:, :, 0]
         else:
             tgt_key_padding_mask = None
-            self.mask = None
+            # self.mask = None
 
         tfmr_out = self.transformer_decoder(
             cats_combined_embedding,
