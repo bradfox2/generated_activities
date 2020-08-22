@@ -4,7 +4,7 @@ from torchtext.data import Field
 import torch
 
 
-def field_printer(field: Field, prob_tensor: Tensor, tgt: Tensor) -> Tensor:
+def field_printer(field: Field, prob_tensor: Tensor, tgt: Tensor):
     """ reverse tokenizes tensors using field.vocab, returns [(prob, target), ...]"""
     print(
         list(
@@ -22,6 +22,26 @@ def field_printer(field: Field, prob_tensor: Tensor, tgt: Tensor) -> Tensor:
             )
         )
     )
+
+def field_accuracy(field:Field, prob_tensor:Tensor, tgt:Tensor, digits:int) -> float:
+    acc = [1 if i==j else 0 for i,j in 
+        zip(
+            [
+                field.vocab.itos[i]
+                for i in prob_tensor.argmax(dim=-1).flatten()
+                if field.vocab.itos[i] != "<pad>"
+            ],
+            [
+                field.vocab.itos[i]
+                for i in tgt.flatten()
+                if field.vocab.itos[i] != "<pad>"
+            ],
+        )]
+    
+    return round(sum(acc)/len(acc),digits)
+
+
+    
 
 
 import math

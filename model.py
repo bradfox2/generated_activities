@@ -71,10 +71,8 @@ class SAModel(nn.Module):
         p_class_drop: float = 0.1,
         static_data_embedding_size: int = 768,
         device: torch.device = torch.device("cpu"),
-<<<<<<< HEAD
         dropout: float = 0.5,
-=======
->>>>>>> master
+        grad_norm_clip: float = 1.0,
     ) -> None:
 
         super(SAModel, self).__init__()
@@ -104,15 +102,15 @@ class SAModel(nn.Module):
             self.categorical_embedding_dim * self.num_independent_categoricals
         )
         self.dropout = dropout
+        self.grad_norm_clip = grad_norm_clip
         self.mask = None
         self.transformer_decoder_layer = nn.TransformerDecoderLayer(
-            self.transformer_dim_sz, self.num_attn_heads, self.num_hidden, self.dropout
+            self.transformer_dim_sz, self.num_attn_heads, self.num_hidden, self.dropout,
         )
         self.transformer_decoder = nn.TransformerDecoder(
             self.transformer_decoder_layer, self.num_transformer_layers
         )
         self.classification_tnsr_drop = nn.Dropout(dropout)
-        self.optimizer = torch.optim.AdamW(self.parameters())
         self.pos_encoder = PositionalEncoding(
             self.num_independent_categoricals * self.categorical_embedding_dim, dropout
         )
@@ -139,11 +137,13 @@ class SAModel(nn.Module):
         )
         self.static_data_layer_norm = nn.LayerNorm(self.transformer_dim_sz)
 
-        self.scheduler = torch.optim.lr_scheduler.StepLR(
-            self.optimizer, 5.0, learning_rate_decay_rate
-        )
         self.static_optimizer = transformers.AdamW(
             self.static_data_model.parameters(), lr=1e-5
+        )
+        self.optimizer = torch.optim.AdamW(self.parameters())
+
+        self.scheduler = torch.optim.lr_scheduler.StepLR(
+            self.optimizer, 5.0, learning_rate_decay_rate
         )
 
     def _pad_tokens_identical(self):
@@ -247,21 +247,17 @@ class SAModel(nn.Module):
             self.transformer_dim_sz
         )
         cats_combined_embedding = self.pos_encoder(cats_combined_embedding)
-        # cat_embs_nrm = self.cat_emb_layer_norm(cats_combined_embedding)
 
-        if self.training:
-            tgt_key_padding_mask = data == tgt_pad_idx
-            # dims = (target sequence length x batch size)
-            tgt_key_padding_mask = tgt_key_padding_mask.permute(1, 0, 2)[:, :, 0]
-        else:
-            tgt_key_padding_mask = None
-            self.mask = None
+        tgt_key_pad_mask = data == tgt_pad_idx
+        tgt_key_pad_mask = tgt_key_pad_mask.permute(1, 0, 2)[
+            :, :, 0
+        ]  # (target sequence length x batch size)
 
         tfmr_out = self.transformer_decoder(
             cats_combined_embedding,
             memory=static_data_embedding_squeeze,
             tgt_mask=self.mask,
-            tgt_key_padding_mask=tgt_key_padding_mask,
+            tgt_key_padding_mask=tgt_key_pad_mask,
         )
 
         tfmr_out = self.classification_tnsr_drop(tfmr_out)
@@ -282,6 +278,7 @@ class SAModel(nn.Module):
         loss = self.loss(preds, targets)
 
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.parameters(), self.grad_norm_clip)
         self.optimizer.step()
         self.static_optimizer.step()
 

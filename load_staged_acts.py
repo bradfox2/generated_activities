@@ -1,8 +1,6 @@
 """loads long dataset of staged acts with the cr details, and makes staged act sequences grouped by crs"""
 
-from os import startfile
 import pandas
-import numpy as np
 
 staged_activity_fields = [
     "SA_WRK_TYPE",
@@ -39,14 +37,14 @@ def get_dat_data(split_frac: float = 0.8):
         "DESCR",
         "LEADER_COMMENT",
     ]:
-        cr_data["TEXT"] += f" [{col}] " + cr_data[col].astype(str)
+        cr_data["TEXT"] += f" [{col}] " + cr_data.get(col, "[SEP]").astype(str)
 
     with open("staged_act_test_crs.txt", "r") as f:
         test_set = f.read().splitlines()
 
-    tst_data = cr_data[cr_data.CR_CD.isin(test_set)]
+    tst_data = cr_data[cr_data.CR_CD.isin(cr_data.sample(frac=0.2).CR_CD)]
     assert len(tst_data) > 1, "Need tst data."
-    trn_data = cr_data[~cr_data.CR_CD.isin(test_set)]
+    trn_data = cr_data[~cr_data.CR_CD.isin(tst_data.CR_CD)]
     assert len(trn_data) > 1, "Need training data."
     trn_act_seqs = create_act_seqs(trn_data, staged_activity_fields)
     trn_static_data = trn_data[["CR_CD", "TEXT"]].drop_duplicates().set_index("CR_CD")
