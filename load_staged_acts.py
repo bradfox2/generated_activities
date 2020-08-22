@@ -1,6 +1,9 @@
 """loads long dataset of staged acts with the cr details, and makes staged act sequences grouped by crs"""
 
 import pandas
+from utils import set_seed
+
+set_seed(0)
 
 staged_activity_fields = [
     "SA_WRK_TYPE",
@@ -22,8 +25,31 @@ def get_dat_data(split_frac: float = 0.8):
         "staged_activities.csv",
         dtype={k: object for k in staged_activity_fields},
         parse_dates=True,
+        # keep most of the pandas default nan values, but not the N/A which
+        # is what is used for acts that have 3/4 fields filled and one field
+        # that is not applicable
+        na_values=[
+            "#N/A",
+            "#N/A N/A",
+            "#NA",
+            "-1.#IND",
+            "-1.#QNAN",
+            "-NaN",
+            "-nan",
+            "1.#IND",
+            "1.#QNAN",
+            "<NA>",
+            "NA",
+            "NULL",
+            "NaN",
+            "nan",
+            "null",
+            None,
+            "",
+        ],
+        keep_default_na=False,
     )
-    cr_data = cr_data.sample(frac=1)
+    cr_data = cr_data.sample(frac=1, random_state=1)
 
     # Add Leader comment
 
@@ -42,19 +68,23 @@ def get_dat_data(split_frac: float = 0.8):
     with open("staged_act_test_crs.txt", "r") as f:
         test_set = f.read().splitlines()
 
-    tst_data = cr_data[cr_data.CR_CD.isin(cr_data.sample(frac=0.2).CR_CD)]
+    tst_data = cr_data[
+        cr_data.CR_CD.isin(cr_data.sample(frac=0.2, random_state=1).CR_CD)
+    ]
     assert len(tst_data) > 1, "Need tst data."
     trn_data = cr_data[~cr_data.CR_CD.isin(tst_data.CR_CD)]
     assert len(trn_data) > 1, "Need training data."
     trn_act_seqs = create_act_seqs(trn_data, staged_activity_fields)
     trn_static_data = trn_data[["CR_CD", "TEXT"]].drop_duplicates().set_index("CR_CD")
     trn_static_data = trn_static_data[trn_static_data.index.isin(trn_act_seqs.index)]
+    trn_static_data = trn_static_data.reindex(trn_act_seqs.index)
 
     assert len(trn_static_data) == len(trn_act_seqs)
 
     tst_act_seqs = create_act_seqs(tst_data, staged_activity_fields)
     tst_static_data = tst_data[["CR_CD", "TEXT"]].drop_duplicates().set_index("CR_CD")
     tst_static_data = tst_static_data[tst_static_data.index.isin(tst_act_seqs.index)]
+    tst_static_data = tst_static_data.reindex(tst_act_seqs.index)
 
     return trn_act_seqs, tst_act_seqs, trn_static_data, tst_static_data
 

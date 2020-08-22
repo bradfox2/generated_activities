@@ -5,6 +5,9 @@ import torchtext
 from pandas import Series
 import torch
 import numpy as np
+from utils import set_seed
+
+set_seed(0)
 
 # trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data = get_dat_data()
 
@@ -47,10 +50,6 @@ RESPGROUP = torchtext.data.Field(
     init_token=init_token,
     pad_token=pad_token,
 )
-
-
-def truncate_series_by_len(series: Series, max_len: int):
-    return series[series.apply(len) <= max_len]
 
 
 def pad(series_element, pad_len, pad_token, num_fields_to_pad):
@@ -146,6 +145,7 @@ def process(
             for actlist in trn_act_seqs
         ],
         specials=["<pad>"],
+        # min_freq=100,
     )
     SUBTYPE.build_vocab(
         [
@@ -153,6 +153,7 @@ def process(
             for actlist in trn_act_seqs
         ],
         specials=["<pad>"],
+        # min_freq=15,
     )
     LVL.build_vocab(
         [
@@ -160,6 +161,7 @@ def process(
             for actlist in trn_act_seqs
         ],
         specials=["<pad>"],
+        # min_freq=50,
     )
     RESPGROUP.build_vocab(
         [
@@ -167,25 +169,21 @@ def process(
             for actlist in trn_act_seqs
         ],
         specials=["<pad>"],
+        # min_freq=7,
     )
 
     # add sequencing indicator tokens and numericalize
-    trn_act_seqs = truncate_series_by_len(
-        trn_act_seqs, max_len - 2
-    )  # leave 2 spaces for sos and eos tokens
-    tst_act_seqs = truncate_series_by_len(tst_act_seqs, max_len - 2)
+    # leave 2 spaces for sos and eos tokens during truncation
+    trn_act_seqs = trn_act_seqs.apply(lambda x: x[: max_len - 2])
+    tst_act_seqs = tst_act_seqs.apply(lambda x: x[: max_len - 2])
 
     numer_trn_act_seqs = trn_act_seqs.apply(
         add_start_stop_and_numericalize_and_pad, args=(max_len,)
     )
-    shuffled_num_seqs_trn = trn_act_seqs.apply(len).sample(frac=1).index
-    numer_trn_act_seqs = numer_trn_act_seqs.reindex(shuffled_num_seqs_trn)
 
     numer_tst_act_seqs = tst_act_seqs.apply(
         add_start_stop_and_numericalize_and_pad, args=(max_len,)
     )
-    shuffled_num_seqs_tst = tst_act_seqs.apply(len).sample(frac=1).index
-    numer_tst_act_seqs = numer_tst_act_seqs.reindex(shuffled_num_seqs_tst)
 
     numer_trn_static_data = trn_static_data["TEXT"].fillna("<unk>")  # .apply(
     # lambda x: tokenizer.encode(x[:512])
@@ -194,8 +192,10 @@ def process(
     # lambda x: tokenizer.encode(x[:512])
     # )
 
-    numer_trn_static_data = numer_trn_static_data.reindex(shuffled_num_seqs_trn)
-    numer_tst_static_data = numer_tst_static_data.reindex(shuffled_num_seqs_tst)
+    assert numer_trn_act_seqs.apply(len).max() <= max_len
+    assert numer_tst_act_seqs.apply(len).max() <= max_len
+    assert numer_trn_act_seqs.index[100] == numer_trn_static_data.index[100]
+    assert numer_tst_act_seqs.index[100] == numer_tst_act_seqs.index[100]
 
     return (
         numer_trn_act_seqs,
