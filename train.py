@@ -199,18 +199,19 @@ for i in range(num_epochs):
     logger.info(f"Validation Loss: {validate(model):.3f}")
 
     # save checkpoint
-    checkpoint_path = f"./saved_models/chkpnt-{model_name}-EP{i}-TRNLOSS{str(epoch_avg_loss)[:5].replace('.','dot')}-{datetime.datetime.today().strftime('%Y-%m-%d %H-%M-%S')}.ptm"
-    checkpoint_path = checkpoint_path[:260].replace(" ", "_")
-    logger.info(f"Saving Checkpoint {checkpoint_path}")
-    torch.save(
-        {
-            "epoch": i,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": model.optimizer.state_dict(),
-            "loss": epoch_avg_loss,
-        },
-        checkpoint_path,
-    )
+    if len(train_loss_record) > 2 and train_loss_record[-1] > train_loss_record[-2]:
+        checkpoint_path = f"./saved_models/chkpnt-{model_name}-EP{i}-TRNLOSS{str(epoch_avg_loss)[:5].replace('.','dot')}-{datetime.datetime.today().strftime('%Y-%m-%d %H-%M-%S')}.ptm"
+        checkpoint_path = checkpoint_path[:260].replace(" ", "_")
+        logger.info(f"Saving Checkpoint {checkpoint_path}")
+        torch.save(
+            {
+                "epoch": i,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": model.optimizer.state_dict(),
+                "loss": epoch_avg_loss,
+            },
+            checkpoint_path,
+        )
 
 torch.save(model.state_dict(), f"./saved_models/{model_name}.ptm")
 pickle.dump(
