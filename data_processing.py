@@ -6,9 +6,10 @@ from pandas import Series
 import torch
 import numpy as np
 from utils import set_seed
+import logging
 
 set_seed(0)
-
+logger = logging.getLogger(__name__)
 # trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data = get_dat_data()
 
 eos_token = "<eos>"
@@ -139,13 +140,17 @@ def process(
 ):
     """ Main data processing function that will build independent category tokenizers, 
     numericalize the tokens, and truncate and pad to maximum sequence length."""
+    logger.info(
+        f"Processing {len(trn_act_seqs)} training records{len(tst_act_seqs)} test records"
+    )
+
     TYPE.build_vocab(
         [
             [act[0] for act in actlist if not pandas.isna(act[0])]
             for actlist in trn_act_seqs
         ],
         specials=["<pad>"],
-        # min_freq=100,
+        min_freq=100,
     )
     SUBTYPE.build_vocab(
         [
@@ -153,7 +158,7 @@ def process(
             for actlist in trn_act_seqs
         ],
         specials=["<pad>"],
-        # min_freq=15,
+        min_freq=15,
     )
     LVL.build_vocab(
         [
@@ -161,7 +166,7 @@ def process(
             for actlist in trn_act_seqs
         ],
         specials=["<pad>"],
-        # min_freq=50,
+        min_freq=50,
     )
     RESPGROUP.build_vocab(
         [
@@ -169,7 +174,7 @@ def process(
             for actlist in trn_act_seqs
         ],
         specials=["<pad>"],
-        # min_freq=7,
+        min_freq=7,
     )
 
     # add sequencing indicator tokens and numericalize

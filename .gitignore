@@ -12,7 +12,7 @@ saved_models/*
 .vscode
 scratch*
 runs/*
-
+*.code-workspace
 
 
 !vocab.txt

@@ -10,25 +10,28 @@ import torch.nn as nn
 import transformers
 from torch.tensor import Tensor
 from torchtext.data.field import Field
-from transformers import DistilBertModel, DistilBertTokenizer
+from transformers import DistilBertModel
 import math
 from utils import get_field_term_weights
 
 
 class IndependentCategorical(object):
     def __init__(
-        self, name: str, num_levels: int, padding_idx: int, term_weights: List[Tensor]
+        self, name: str, num_levels: int, padding_idx: int, term_weights: List[Tensor],
     ) -> None:
+        """ independent categorical used to create embedding and classification layers"""
         self.name = name
         self.num_levels = num_levels
         self.padding_idx = padding_idx
         self.term_weights: List = term_weights
 
     @classmethod
-    def from_torchtext_field(cls, name: str, field: Field, padding_token="<pad>"):
+    def from_torchtext_field(
+        cls, name: str, field: Field, total_num_samples: int, padding_token="<pad>"
+    ):
         num_levels: int = len(field.vocab.itos)
         padding_idx: int = field.vocab.stoi[padding_token]
-        term_weights: Tensor = get_field_term_weights(field)
+        term_weights: Tensor = get_field_term_weights(field, total_num_samples)
         return IndependentCategorical(name, num_levels, padding_idx, term_weights)
 
 
@@ -68,9 +71,10 @@ class SAModel(nn.Module):
         learning_rate_decay_rate: float,
         independent_categoricals: List[IndependentCategorical],
         freeze_static_model_weights: bool,
+        warmup_steps: int,
+        total_steps: int,
         p_class_drop: float = 0.1,
         static_data_embedding_size: int = 768,
-        device: torch.device = torch.device("cpu"),
         dropout: float = 0.5,
         grad_norm_clip: float = 1.0,
     ) -> None:
@@ -82,7 +86,9 @@ class SAModel(nn.Module):
         self.num_hidden = num_hidden
         self.num_transformer_layers = num_transformer_layers
         self.independent_categoricals = independent_categoricals
-        self.device = device
+        self.learning_rate = learning_rate
+        self.warmup_steps = warmup_steps
+        self.total_steps = total_steps
         self.num_independent_categoricals = len(independent_categoricals)
         assert (
             self.categorical_embedding_dim
@@ -137,13 +143,10 @@ class SAModel(nn.Module):
         )
         self.static_data_layer_norm = nn.LayerNorm(self.transformer_dim_sz)
 
-        self.static_optimizer = transformers.AdamW(
-            self.static_data_model.parameters(), lr=1e-5
-        )
-        self.optimizer = torch.optim.AdamW(self.parameters())
+        self.optimizer = transformers.AdamW(self.parameters(), self.learning_rate)
 
-        self.scheduler = torch.optim.lr_scheduler.StepLR(
-            self.optimizer, 5.0, learning_rate_decay_rate
+        self.scheduler = transformers.get_cosine_schedule_with_warmup(
+            self.optimizer, self.warmup_steps, self.total_steps
         )
 
     def _pad_tokens_identical(self):
@@ -159,7 +162,7 @@ class SAModel(nn.Module):
         self.loss_criteria = [
             nn.CrossEntropyLoss(
                 ignore_index=ind_cat.padding_idx, weight=ind_cat.term_weights
-            ).to(self.device)
+            )  # .to(self.device)
             for ind_cat in self.independent_categoricals
         ]
 
@@ -225,7 +228,7 @@ class SAModel(nn.Module):
             self._generate_square_target_mask(self.sequence_length)
             if self.mask is None
             else self.mask
-        ).to(self.device)
+        )  # .to(self.device)
 
         assert self._pad_tokens_identical()
         tgt_pad_idx = self.independent_categoricals[0].padding_idx
@@ -268,7 +271,6 @@ class SAModel(nn.Module):
 
     def learn(self, data: Tensor, static_data: Tensor, targets: Tensor):
         self.optimizer.zero_grad()
-        self.static_optimizer.zero_grad()
 
         data = data
         targets = targets
@@ -278,8 +280,8 @@ class SAModel(nn.Module):
         loss = self.loss(preds, targets)
 
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.parameters(), self.grad_norm_clip)
+        # torch.nn.utils.clip_grad_norm_(self.parameters(), self.grad_norm_clip)
         self.optimizer.step()
-        self.static_optimizer.step()
+        self.scheduler.step()
 
         return loss.item()
