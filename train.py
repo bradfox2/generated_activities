@@ -176,7 +176,7 @@ for i in range(num_epochs):
     epoch_loss = 0.0
     counter = 0
     loss_tracker = []
-    data_gen = gen_inp_data_set(seq_data_trn[:1000], static_data_trn[:1000])
+    data_gen = gen_inp_data_set(seq_data_trn, static_data_trn)
     for data, tgt, static_data_txt in data_gen:
         static_data = static_tokenizer(
             static_data_txt.tolist(), padding=True, truncation=True, return_tensors="pt"
@@ -191,12 +191,12 @@ for i in range(num_epochs):
             logger.info(f"LR: {model.scheduler.get_last_lr()[0]}")
             logger.info(f"Loss: {(epoch_loss / log_interval):.3f}")
             epoch_loss = 0.0
-    # epoch_avg_loss = sum(loss_tracker) / len(loss_tracker)
+    epoch_avg_loss = sum(loss_tracker) / len(loss_tracker)
 
-    # train_loss_record.append(epoch_avg_loss)
+    train_loss_record.append(epoch_avg_loss)
 
     logger.info(
-        f"Validation Loss: {validate(model, seq_data_tst[:100], static_data_tst[:100]):.3f}"
+        f"Validation Loss: {validate(model, seq_data_tst, static_data_tst):.3f}"
     )
 
     # save checkpoint
