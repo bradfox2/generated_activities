@@ -51,20 +51,20 @@ sequence_length = (
 )
 num_act_cats = 4  # number of independent fields in a category group
 batch_sz = (
-    8  # minibatch size, sequences of independent cat groups to be processed in parallel
+    4  # minibatch size, sequences of independent cat groups to be processed in parallel
 )
 rec_len = len(trnseq) // batch_sz  # num records in training set, used for batchifying
-emb_dim = 16  # embedding dim for each categorical
+emb_dim = 192  # embedding dim for each categorical
 embedding_dim_into_tran = (
     emb_dim * num_act_cats
 )  # embedding dim size into transformer layers
-tfmr_num_hidden = 32  # number of hidden units in transfomer linear layer
-num_attn_heads = 4  # number of transformer attention heads
-num_dec_layers = 2  # number of transformer decoder layers (main layers)
+tfmr_num_hidden = emb_dim * 4  # number of hidden units in transfomer linear layer
+num_attn_heads = 8  # number of transformer attention heads
+num_dec_layers = 4  # number of transformer decoder layers (main layers)
 bptt = (
     sequence_length + 2
 )  # back prop through time or sequence length, how far the lookback window goes
-num_epochs = 40
+num_epochs = 250
 
 # tokenize, truncate, pad
 (
@@ -80,7 +80,7 @@ assert (
 ), "Records are being dropped during processing"
 assert trnseq.index.identical(
     numer_trn_act_seqs.index
-), "Mismatch between static data and seq data."
+), "Mismatch between seq tokenized data and seq numericalized data."
 assert numer_trn_static_data.index.identical(
     numer_trn_act_seqs.index
 ), "Mismatch between static data and seq data."
@@ -105,11 +105,11 @@ def gen_inp_data_set(seq_data: torch.Tensor, static_data: np.array):
         yield inp, target, static_data[i]
 
 
-def validate(eval_model):
+def validate(eval_model, seq_data, static_data):
     eval_model.eval()
     with torch.no_grad():
         val_loss = 0.0
-        data_gen = gen_inp_data_set(seq_data_tst, static_data_tst)
+        data_gen = gen_inp_data_set(seq_data, static_data)
         # data, tgt, static_data = next(data_gen)
         val_acc_l = []
         for data, tgt, static_data in data_gen:
@@ -133,7 +133,7 @@ def validate(eval_model):
                 for idx, field in enumerate(fields)
             ]
         )
-        return val_loss.item() / len(seq_data_tst)
+        return val_loss.item() / len(seq_data)
 
 
 fields = [TYPE, SUBTYPE, LVL, RESPGROUP]
@@ -153,13 +153,12 @@ model = SAModel(
     num_attn_heads=num_attn_heads,
     num_hidden=tfmr_num_hidden,
     num_transformer_layers=num_dec_layers,
-    learning_rate=1e-3,
-    learning_rate_decay_rate=0.98,
+    learning_rate=1e-5,
     independent_categoricals=[type_, subtype, lvl, respgroup],
     freeze_static_model_weights=False,
-    warmup_steps=rec_len // batch_sz,  # about 1 epoch
-    total_steps=num_epochs * rec_len,
-    p_class_drop=0.5,
+    warmup_steps=20,  # rec_len // batch_sz,  # about 1 epoch
+    total_steps=num_epochs * 10,  # ,rec_len,
+    device=device,
 )
 
 static_tokenizer = DistilBertTokenizer.from_pretrained(
@@ -170,19 +169,19 @@ static_tokenizer = DistilBertTokenizer.from_pretrained(
 
 
 model.to(device)
-log_interval = 100
+log_interval = 1
 train_loss_record = []
 for i in range(num_epochs):
     model.train()
     epoch_loss = 0.0
     counter = 0
     loss_tracker = []
-    data_gen = gen_inp_data_set(seq_data_trn, static_data_trn)
-    for data, tgt, static_data in data_gen:
+    data_gen = gen_inp_data_set(seq_data_trn[:10], static_data_trn[:10])
+    for data, tgt, static_data_txt in data_gen:
         static_data = static_tokenizer(
-            static_data.tolist(), padding=True, truncation=True, return_tensors="pt"
+            static_data_txt.tolist(), padding=True, truncation=True, return_tensors="pt"
         ).to(device)
-        batch_loss = model.learn(data, static_data, tgt)
+        batch_loss = model.learn(data.to(device), static_data, tgt.to(device))
         epoch_loss += batch_loss
         counter += 1
         if counter % log_interval == 0:
@@ -192,11 +191,13 @@ for i in range(num_epochs):
             logger.info(f"LR: {model.scheduler.get_last_lr()[0]}")
             logger.info(f"Loss: {(epoch_loss / log_interval):.3f}")
             epoch_loss = 0.0
-    epoch_avg_loss = sum(loss_tracker) / len(loss_tracker)
+    # epoch_avg_loss = sum(loss_tracker) / len(loss_tracker)
 
-    train_loss_record.append(epoch_avg_loss)
+    # train_loss_record.append(epoch_avg_loss)
 
-    logger.info(f"Validation Loss: {validate(model):.3f}")
+    logger.info(
+        f"Validation Loss: {validate(model, seq_data_trn[:10], static_data_trn[:10]):.3f}"
+    )
 
     # save checkpoint
     if len(train_loss_record) > 2 and train_loss_record[-1] > train_loss_record[-2]:
@@ -228,10 +229,8 @@ def load_model(device: torch.device):
         num_hidden=tfmr_num_hidden,
         num_transformer_layers=num_dec_layers,
         learning_rate=1e-3,
-        learning_rate_decay_rate=0.98,
         independent_categoricals=[type_, subtype, lvl, respgroup],
         freeze_static_model_weights=True,
-        p_class_drop=0.5,
         device=device,
     )
 

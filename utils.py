@@ -6,7 +6,9 @@ import torchtext
 from torch import Tensor
 from torchtext.data import Field
 import logging
+
 logger = logging.getLogger(__name__)
+
 
 def field_printer(field: Field, prob_tensor: Tensor, tgt: Tensor):
     """ reverse tokenizes tensors using field.vocab, returns [(prob, target), ...]"""
@@ -59,12 +61,11 @@ def get_field_term_weights(
         for class_name, total_counts in field.vocab.freqs.items()
     }
 
-    
     weights = torch.tensor(
         [
-            inverse_proportion_of_term[i]
-            if i in inverse_proportion_of_term.keys()
-            else total_num_samples/ (len(field.vocab.stoi) * total_num_samples)
+            inverse_proportion_of_term[i] if i in inverse_proportion_of_term.keys()
+            # else 1.0
+            else total_num_samples / (len(field.vocab.stoi) * total_num_samples)
             for i in field.vocab.itos
         ]
     )
