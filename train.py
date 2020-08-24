@@ -63,7 +63,7 @@ num_attn_heads = 8  # number of transformer attention heads
 num_dec_layers = 4  # number of transformer decoder layers (main layers)
 bptt = (
     sequence_length + 2
-)  # back prop through time or sequence length, how far the lookback window goes
+)  # back prop through time or sequence length, how long the sequence is that we are working with
 num_epochs = 250
 
 # tokenize, truncate, pad
@@ -92,7 +92,7 @@ static_data_trn = batchify_static_data(
     numer_trn_static_data[: seq_data_trn.shape[0] * batch_sz], batch_sz
 )
 static_data_tst = batchify_static_data(
-    numer_trn_static_data[: seq_data_trn.shape[0] * batch_sz], batch_sz
+    numer_tst_static_data[: seq_data_tst.shape[0] * batch_sz], batch_sz
 )
 
 # dims (mini_batch(batch_sz) x bptt x act_cats)
@@ -156,8 +156,8 @@ model = SAModel(
     learning_rate=1e-5,
     independent_categoricals=[type_, subtype, lvl, respgroup],
     freeze_static_model_weights=False,
-    warmup_steps=20,  # rec_len // batch_sz,  # about 1 epoch
-    total_steps=num_epochs * 10,  # ,rec_len,
+    warmup_steps=2000,  # rec_len // batch_sz,  # about 1 epoch
+    total_steps=num_epochs * 1000,  # ,rec_len,
     device=device,
 )
 
@@ -169,14 +169,14 @@ static_tokenizer = DistilBertTokenizer.from_pretrained(
 
 
 model.to(device)
-log_interval = 1
+log_interval = 10
 train_loss_record = []
 for i in range(num_epochs):
     model.train()
     epoch_loss = 0.0
     counter = 0
     loss_tracker = []
-    data_gen = gen_inp_data_set(seq_data_trn[:10], static_data_trn[:10])
+    data_gen = gen_inp_data_set(seq_data_trn[:1000], static_data_trn[:1000])
     for data, tgt, static_data_txt in data_gen:
         static_data = static_tokenizer(
             static_data_txt.tolist(), padding=True, truncation=True, return_tensors="pt"
@@ -196,7 +196,7 @@ for i in range(num_epochs):
     # train_loss_record.append(epoch_avg_loss)
 
     logger.info(
-        f"Validation Loss: {validate(model, seq_data_trn[:10], static_data_trn[:10]):.3f}"
+        f"Validation Loss: {validate(model, seq_data_tst[:100], static_data_tst[:100]):.3f}"
     )
 
     # save checkpoint
@@ -209,7 +209,7 @@ for i in range(num_epochs):
                 "epoch": i,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": model.optimizer.state_dict(),
-                "loss": epoch_avg_loss,
+                "scheduler_state_dict": model.scheduler.state_dict(),
             },
             checkpoint_path,
         )

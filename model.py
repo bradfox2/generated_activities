@@ -164,7 +164,7 @@ class SAModel(nn.Module):
         assert self._pad_tokens_identical()
         self.tgt_pad_idx = self.independent_categoricals[0].padding_idx
         self.scheduler = transformers.get_cosine_with_hard_restarts_schedule_with_warmup(
-            self.optimizer, self.warmup_steps, self.total_steps, 4
+            self.optimizer, self.warmup_steps, self.total_steps, 6
         )
 
     def _pad_tokens_identical(self):
