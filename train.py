@@ -22,6 +22,7 @@ import sys
 
 set_seed(0)
 
+load_chkpnt = True
 
 model_name = "SIAG3"  # Seq_Ind_Acts_Generation
 
@@ -50,9 +51,7 @@ sequence_length = (
     5  # maximum number of independent category groups that make up a sequence
 )
 num_act_cats = 4  # number of independent fields in a category group
-batch_sz = (
-    4  # minibatch size, sequences of independent cat groups to be processed in parallel
-)
+batch_sz = 12  # minibatch size, sequences of independent cat groups to be processed in parallel
 rec_len = len(trnseq) // batch_sz  # num records in training set, used for batchifying
 emb_dim = 192  # embedding dim for each categorical
 embedding_dim_into_tran = (
@@ -156,8 +155,8 @@ model = SAModel(
     learning_rate=1e-5,
     independent_categoricals=[type_, subtype, lvl, respgroup],
     freeze_static_model_weights=False,
-    warmup_steps=2000,  # rec_len // batch_sz,  # about 1 epoch
-    total_steps=num_epochs * 1000,  # ,rec_len,
+    warmup_steps=(rec_len // batch_sz) * 1.5,  # about 1 epoch
+    total_steps=num_epochs * (rec_len // batch_sz),
     device=device,
 )
 
@@ -168,6 +167,15 @@ static_tokenizer = DistilBertTokenizer.from_pretrained(
 )
 
 
+if load_chkpnt:
+    model_path = './saved_models/chkpnt-SIAG3.ptm'
+    logger.info(f"Loading model from {model_path}")
+    model.to(device) # move model before loading optimizer
+    checkpoint = torch.load(model_path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    epoch = checkpoint['epoch']
+    
 model.to(device)
 log_interval = 10
 train_loss_record = []
@@ -201,7 +209,7 @@ for i in range(num_epochs):
 
     # save checkpoint
     if len(train_loss_record) > 2 and train_loss_record[-1] > train_loss_record[-2]:
-        checkpoint_path = f"./saved_models/chkpnt-{model_name}-EP{i}-TRNLOSS{str(epoch_avg_loss)[:5].replace('.','dot')}-{datetime.datetime.today().strftime('%Y-%m-%d %H-%M-%S')}.ptm"
+        checkpoint_path = f"./saved_models/chkpnt-{model_name}.ptm"
         checkpoint_path = checkpoint_path[:260].replace(" ", "_")
         logger.info(f"Saving Checkpoint {checkpoint_path}")
         torch.save(
