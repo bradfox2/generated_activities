@@ -10,23 +10,27 @@ import transformers
 from torch.tensor import Tensor
 from torchtext.data.field import Field
 from transformers import DistilBertModel
+import math
 from utils import get_field_term_weights
 
 
 class IndependentCategorical(object):
     def __init__(
-        self, name: str, num_levels: int, padding_idx: int, term_weights: List[Tensor]
+        self, name: str, num_levels: int, padding_idx: int, term_weights: List[Tensor],
     ) -> None:
+        """ independent categorical used to create embedding and classification layers"""
         self.name = name
         self.num_levels = num_levels
         self.padding_idx = padding_idx
         self.term_weights: List = term_weights
 
     @classmethod
-    def from_torchtext_field(cls, name: str, field: Field, padding_token="<pad>"):
+    def from_torchtext_field(
+        cls, name: str, field: Field, total_num_samples: int, padding_token="<pad>"
+    ):
         num_levels: int = len(field.vocab.itos)
         padding_idx: int = field.vocab.stoi[padding_token]
-        term_weights: Tensor = get_field_term_weights(field)
+        term_weights: Tensor = get_field_term_weights(field, total_num_samples)
         return IndependentCategorical(name, num_levels, padding_idx, term_weights)
 
 
@@ -93,20 +97,78 @@ class VerySmallSAModel(SAModelConfig):
             setattr(self, k, v)
 
 
+class ActClassifierHead(nn.Module):
+    def __init__(self, n_embd, p_drop, n_classes) -> None:
+        super(ActClassifierHead, self).__init__()
+        self.ln1 = nn.LayerNorm(n_embd)
+        self.mlp = nn.Sequential(
+            nn.Linear(n_embd, 4 * n_embd),
+            nn.GELU(),
+            nn.Linear(4 * n_embd, n_embd),
+            nn.Dropout(p_drop),
+        )
+        self.final_class = nn.Linear(n_embd, n_classes)
+
+    def forward(self, x):
+        return self.final_class(self.mlp(self.ln1(x)))
+
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
+        )
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer("pe", pe)
+
+    def forward(self, x):
+        x = x + self.pe[: x.size(0), :]
+        return self.dropout(x)
+
+
 class SAModel(nn.Module):
     def __init__(
-        self, config: SAModelConfig, device: torch.device = torch.device("cpu"),
+        self,
+        model_name: str,
+        sequence_length: int,
+        independent_categoricals: List[IndependentCategorical],
+        static_data_embedding_size: int,
+        freeze_static_model_weights: bool,
+        categorical_embedding_dim: int,
+        num_attn_heads: int,
+        num_hidden: int,
+        num_transformer_layers: int,
+        learning_rate: float,
+        independent_categoricals: List[IndependentCategorical],
+        freeze_static_model_weights: bool,
+        warmup_steps: int,
+        total_steps: int,
+        device,
+        static_data_embedding_size: int = 768,
+        dropout: float = 0.2,
+        grad_norm_clip: float = 1.0,
     ) -> None:
-
-        super(SAModel, self).__init__()
-        self.sequence_length = config.sequence_length
-        self.categorical_embedding_dim = config.categorical_embedding_dim
-        self.num_attn_heads = config.num_attn_heads
-        self.num_transformer_layers = config.num_transformer_layers
-        self.independent_categoricals = config.independent_categoricals
-        self.p_class_drop = config.p_class_drop
-        self.device = device
-        self.num_independent_categoricals = len(config.independent_categoricals)
+        self.model_name = model_name
+        self.sequence_length = sequence_length
+        self.independent_categoricals = independent_categoricals
+        self.static_data_embedding_size = static_data_embedding_size
+        self.freeze_static_model_weights = freeze_static_model_weights
+        self.categorical_embedding_dim = categorical_embedding_dim
+        self.num_attn_heads = num_attn_heads
+        self.num_hidden = num_hidden
+        self.num_transformer_layers = num_transformer_layers
+        self.independent_categoricals = independent_categoricals
+        self.learning_rate = learning_rate
+        self.warmup_steps = warmup_steps
+        self.total_steps = total_steps
+        self.num_independent_categoricals = len(independent_categoricals)
         assert (
             self.categorical_embedding_dim
             * self.num_independent_categoricals
@@ -116,25 +178,30 @@ class SAModel(nn.Module):
         self.transformer_dim_sz = (
             self.categorical_embedding_dim * self.num_independent_categoricals
         )
+        self.dropout = dropout
+        self.device = device
         self.weight_initrange = 0.1
         self._generate_embedding_layers()
         self._generate_classification_layers()
         self.apply(self._init_weights)
 
         self._generate_loss_criterion()
+        self._init_weights()
         self.cat_emb_layer_norm = nn.LayerNorm(
             self.categorical_embedding_dim * self.num_independent_categoricals
         )
-
+        self.grad_norm_clip = grad_norm_clip
         self.mask = None
         self.transformer_decoder_layer = nn.TransformerDecoderLayer(
-            self.transformer_dim_sz, self.num_attn_heads
+            self.transformer_dim_sz, self.num_attn_heads, self.num_hidden, self.dropout,
         )
         self.transformer_decoder = nn.TransformerDecoder(
             self.transformer_decoder_layer, self.num_transformer_layers
         )
-        self.classification_tnsr_drop = nn.Dropout(self.p_class_drop)
-        self.optimizer = torch.optim.AdamW(self.parameters())
+        self.classification_tnsr_drop = nn.Dropout(dropout)
+        self.pos_encoder = PositionalEncoding(
+            self.num_independent_categoricals * self.categorical_embedding_dim, dropout
+        )
 
         try:
             self.static_data_model = DistilBertModel.from_pretrained(
@@ -158,11 +225,12 @@ class SAModel(nn.Module):
         )
         self.static_data_layer_norm = nn.LayerNorm(self.transformer_dim_sz)
 
-        self.scheduler = torch.optim.lr_scheduler.StepLR(
-            self.optimizer, 5.0, config.learning_rate_decay_rate
-        )
-        self.static_optimizer = transformers.AdamW(
-            self.static_data_model.parameters(), lr=1e-5
+        self.optimizer = torch.optim.AdamW(self.parameters(), self.learning_rate)
+
+        assert self._pad_tokens_identical()
+        self.tgt_pad_idx = self.independent_categoricals[0].padding_idx
+        self.scheduler = transformers.get_cosine_with_hard_restarts_schedule_with_warmup(
+            self.optimizer, self.warmup_steps, self.total_steps, 6
         )
 
     def _pad_tokens_identical(self):
@@ -200,7 +268,9 @@ class SAModel(nn.Module):
         " Generates a linear classification layer for each independent categorical."
         self.cat_linear_classifiers = nn.ModuleList(
             [
-                nn.Linear(self.transformer_dim_sz, ind_cat.num_levels)
+                ActClassifierHead(
+                    self.transformer_dim_sz, self.dropout, ind_cat.num_levels
+                )
                 for ind_cat in self.independent_categoricals
             ]
         )
@@ -219,14 +289,14 @@ class SAModel(nn.Module):
             ]
         )
 
-    def _init_weights(self, module):
-        if isinstance(module, (nn.Linear, nn.Embedding)):
-            module.weight.data.normal_(mean=0.0, std=0.02)
-            if isinstance(module, nn.Linear) and module.bias is not None:
-                module.bias.data.zero_()
-        elif isinstance(module, nn.LayerNorm):
-            module.bias.data.zero_()
-            module.weight.data.fill_(1.0)
+    def _init_weights(self):
+        " Initialize weights appropriate for transformer for each linear and embedding layer."
+        for layer in self.cat_embeddings:
+            layer.weight.data.uniform_(-self.weight_initrange, self.weight_initrange)
+
+        for layer in self.cat_linear_classifiers:
+            layer.weight.data.uniform_(-self.weight_initrange, self.weight_initrange)
+            layer.bias.data.zero_()
 
     def _generate_square_target_mask(self, seq_len):
         """ Generates a top right triangle square mask of the target sequence.  
@@ -244,11 +314,9 @@ class SAModel(nn.Module):
             self._generate_square_target_mask(self.sequence_length)
             if self.mask is None
             else self.mask
-        ).to(self.device)
+        )
 
-        assert self._pad_tokens_identical()
-        tgt_pad_idx = self.independent_categoricals[0].padding_idx
-
+        # combine all DB word vectors emitted into a single timestep feature vector
         static_data_embedding = (
             self.static_data_model(**static_data)[0].mean(1).unsqueeze(0)
         )
@@ -256,28 +324,30 @@ class SAModel(nn.Module):
         # ensure batch size of static data same as seqential data
         assert list(static_data_embedding.shape[:-1]) == [1, data.shape[1]]
 
-        static_data_embedding_squeeze = self.static_data_squeeze(static_data_embedding)
+        if (
+            static_data_embedding.shape[-1] != self.transformer_dim_sz
+        ):  # force static emb sz equal to cat emb sz
+            static_data_embedding = self.static_data_squeeze(static_data_embedding)
 
         cat_embeddings_list = []
         for idx, embedding in enumerate(self.cat_embeddings):
             cat_embeddings_list.append(embedding(data[..., idx]))
 
-        cats_combined_embedding = torch.cat(cat_embeddings_list, dim=2)
-        # cat_embs_nrm = self.cat_emb_layer_norm(cats_combined_embedding)
+        cats_combined_embedding = torch.cat(cat_embeddings_list, dim=2)  # * math.sqrt(
+        # self.transformer_dim_sz)
 
-        if self.training:
-            tgt_key_padding_mask = data == tgt_pad_idx
-            # dims = (target sequence length x batch size)
-            tgt_key_padding_mask = tgt_key_padding_mask.permute(1, 0, 2)[:, :, 0]
-        else:
-            tgt_key_padding_mask = None
-            # self.mask = None
+        # cats_combined_embedding = self.pos_encoder(cats_combined_embedding)
+
+        tgt_key_pad_mask = data == self.tgt_pad_idx
+        tgt_key_pad_mask = tgt_key_pad_mask.permute(1, 0, 2)[
+            :, :, 0
+        ]  # (target sequence length x batch size)
 
         tfmr_out = self.transformer_decoder(
             cats_combined_embedding,
-            memory=static_data_embedding_squeeze,
-            tgt_mask=self.mask,
-            tgt_key_padding_mask=tgt_key_padding_mask,
+            memory=static_data_embedding,
+            tgt_mask=self.mask.to(self.device),
+            tgt_key_padding_mask=tgt_key_pad_mask,  # .to(self.device),
         )
 
         tfmr_out = self.classification_tnsr_drop(tfmr_out)
@@ -288,17 +358,14 @@ class SAModel(nn.Module):
 
     def learn(self, data: Tensor, static_data: Tensor, targets: Tensor):
         self.optimizer.zero_grad()
-        self.static_optimizer.zero_grad()
-
-        data = data
-        targets = targets
 
         preds = self.forward(data, static_data)
 
         loss = self.loss(preds, targets)
 
         loss.backward()
+        # torch.nn.utils.clip_grad_norm_(self.parameters(), self.grad_norm_clip)
         self.optimizer.step()
-        self.static_optimizer.step()
+        self.scheduler.step()
 
         return loss.item()
