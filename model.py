@@ -120,7 +120,7 @@ class SAModel(nn.Module):
         self._generate_embedding_layers()
         self._generate_classification_layers()
         self._generate_loss_criterion()
-        # self._init_weights()
+        self._init_weights()
         self.cat_emb_layer_norm = nn.LayerNorm(
             self.categorical_embedding_dim * self.num_independent_categoricals
         )
@@ -248,7 +248,7 @@ class SAModel(nn.Module):
             self._generate_square_target_mask(self.sequence_length)
             if self.mask is None
             else self.mask
-        )  # .to(self.device)
+        )
 
         # combine all DB word vectors emitted into a single timestep feature vector
         static_data_embedding = (
@@ -258,7 +258,10 @@ class SAModel(nn.Module):
         # ensure batch size of static data same as seqential data
         assert list(static_data_embedding.shape[:-1]) == [1, data.shape[1]]
 
-        # static_data_embedding = self.static_data_squeeze(static_data_embedding)
+        if (
+            static_data_embedding.shape[-1] != self.transformer_dim_sz
+        ):  # force static emb sz equal to cat emb sz
+            static_data_embedding = self.static_data_squeeze(static_data_embedding)
 
         cat_embeddings_list = []
         for idx, embedding in enumerate(self.cat_embeddings):

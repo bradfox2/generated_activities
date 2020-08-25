@@ -24,7 +24,7 @@ set_seed(0)
 
 load_chkpnt = True
 
-model_name = "SIAG3"  # Seq_Ind_Acts_Generation
+minor chamodel_name = "SIAG4"  # Seq_Ind_Acts_Generation
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -103,8 +103,9 @@ def gen_inp_data_set(seq_data: torch.Tensor, static_data: np.array):
         target = seq_data[i, 1:]
         yield inp, target, static_data[i]
 
+from typing import Tuple
 
-def validate(eval_model, seq_data, static_data):
+def validate(eval_model, seq_data, static_data) -> Tuple[float,float]:
     eval_model.eval()
     with torch.no_grad():
         val_loss = 0.0
@@ -123,7 +124,7 @@ def validate(eval_model, seq_data, static_data):
                 for idx, field in enumerate(fields)
             ]
             val_acc_l.append(val_acc)
-            logger.info(f"Val Acc: {val_acc}")
+            logger.debug("Val Acc: {.5f}".format(val_acc))
         avg_val_acc = [sum(i) / len(i) for i in zip(*val_acc_l)]
         logger.info(f"Mean Val Acc: {avg_val_acc}")
         logger.info(
@@ -132,7 +133,7 @@ def validate(eval_model, seq_data, static_data):
                 for idx, field in enumerate(fields)
             ]
         )
-        return val_loss.item() / len(seq_data)
+        return (val_loss.item() / len(seq_data), sum(avg_val_acc)/len(avg_val_acc))
 
 
 fields = [TYPE, SUBTYPE, LVL, RESPGROUP]
@@ -179,6 +180,7 @@ if load_chkpnt:
 model.to(device)
 log_interval = 10
 train_loss_record = []
+val_acc_record = []
 for i in range(num_epochs):
     model.train()
     epoch_loss = 0.0
@@ -203,13 +205,15 @@ for i in range(num_epochs):
 
     train_loss_record.append(epoch_avg_loss)
 
-    logger.info(
-        f"Validation Loss: {validate(model, seq_data_tst, static_data_tst):.3f}"
-    )
+    val_loss, val_acc = validate(model, seq_data_tst, static_data_tst)
+    val_acc_record.append(val_acc)
+
+    logger.info(f"Validation Loss: {val_loss:.3f}")
+    logger.info(f"Valdation Accuracy: {val_acc:.3f}")
 
     # save checkpoint
-    if len(train_loss_record) > 2 and train_loss_record[-1] > train_loss_record[-2]:
-        checkpoint_path = f"./saved_models/chkpnt-{model_name}.ptm"
+    if val_acc > max(val_acc_record):
+        checkpoint_path = f"./saved_models/chkpnt-{model_name}-EP{i}-TRNLOSS{str(epoch_avg_loss)[:5].replace('.','dot')}-{datetime.datetime.today().strftime('%Y-%m-%d %H-%M-%S')}.ptm"
         checkpoint_path = checkpoint_path[:260].replace(" ", "_")
         logger.info(f"Saving Checkpoint {checkpoint_path}")
         torch.save(
