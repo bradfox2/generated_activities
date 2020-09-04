@@ -24,7 +24,7 @@ set_seed(0)
 
 load_chkpnt = True
 
-minor chamodel_name = "SIAG4"  # Seq_Ind_Acts_Generation
+model_name = "SIAG4"  # Seq_Ind_Acts_Generation
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -103,9 +103,11 @@ def gen_inp_data_set(seq_data: torch.Tensor, static_data: np.array):
         target = seq_data[i, 1:]
         yield inp, target, static_data[i]
 
+
 from typing import Tuple
 
-def validate(eval_model, seq_data, static_data) -> Tuple[float,float]:
+
+def validate(eval_model, seq_data, static_data) -> Tuple[float, float]:
     eval_model.eval()
     with torch.no_grad():
         val_loss = 0.0
@@ -133,7 +135,7 @@ def validate(eval_model, seq_data, static_data) -> Tuple[float,float]:
                 for idx, field in enumerate(fields)
             ]
         )
-        return (val_loss.item() / len(seq_data), sum(avg_val_acc)/len(avg_val_acc))
+        return (val_loss.item() / len(seq_data), sum(avg_val_acc) / len(avg_val_acc))
 
 
 fields = [TYPE, SUBTYPE, LVL, RESPGROUP]
@@ -168,20 +170,31 @@ static_tokenizer = DistilBertTokenizer.from_pretrained(
 )
 
 
-if load_chkpnt:
-    model_path = './saved_models/chkpnt-SIAG3.ptm'
-    logger.info(f"Loading model from {model_path}")
-    model.to(device) # move model before loading optimizer
-    checkpoint = torch.load(model_path)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    epoch = checkpoint['epoch']
-    
+if load_chkpnt:  # continue training
+    try:
+        model_path = "./saved_models/chkpnt-SIAG3.ptm"
+        logger.info(f"Loading model from {model_path}")
+        model.to(device)  # move model before loading optimizer
+        checkpoint = torch.load(model_path)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        model.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        epoch = checkpoint["epoch"]
+    except:
+        Warning("Can not load checkpoint, training from scratch.")
+        epoch = 0
+else:
+    epoch = 0
+
+pickle.dump(
+    [TYPE, SUBTYPE, LVL, RESPGROUP],
+    open(f"./saved_models/{model_name}_fields.pkl", "wb"),
+)
+
 model.to(device)
 log_interval = 10
 train_loss_record = []
 val_acc_record = []
-for i in range(num_epochs):
+for i in range(epoch, num_epochs):
     model.train()
     epoch_loss = 0.0
     counter = 0
@@ -226,11 +239,8 @@ for i in range(num_epochs):
             checkpoint_path,
         )
 
+
 torch.save(model.state_dict(), f"./saved_models/{model_name}.ptm")
-pickle.dump(
-    [TYPE, SUBTYPE, LVL, RESPGROUP],
-    open(f"./saved_models/{model_name}_fields.pkl", "wb"),
-)
 
 
 def load_model(device: torch.device):

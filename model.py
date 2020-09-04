@@ -120,7 +120,7 @@ class SAModel(nn.Module):
         self._generate_embedding_layers()
         self._generate_classification_layers()
         self._generate_loss_criterion()
-        self._init_weights()
+        # self._init_weights()
         self.cat_emb_layer_norm = nn.LayerNorm(
             self.categorical_embedding_dim * self.num_independent_categoricals
         )
