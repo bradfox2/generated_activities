@@ -1,6 +1,8 @@
 import datetime
 import logging
 import pickle
+import sys
+from typing import Tuple
 
 import numpy as np
 import torch
@@ -17,8 +19,7 @@ from data_processing import (
 )
 from load_staged_acts import get_dat_data
 from model import IndependentCategorical, SAModel
-from utils import field_accuracy, set_seed, field_printer
-import sys
+from utils import field_accuracy, field_printer, set_seed
 
 set_seed(0)
 
@@ -29,19 +30,11 @@ model_name = "SIAG4"  # Seq_Ind_Acts_Generation
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
-# create file handler which logs even debug messages
 fh = logging.FileHandler(f"{model_name}_training.log")
 fh.setLevel(logging.DEBUG)
-# create console handler with a higher log level
-# ch = logging.StreamHandler()
-# ch.setLevel(logging.DEBUG)
-# create formatter and add it to the handlers
 formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 fh.setFormatter(formatter)
-# ch.setFormatter(formatter)
-# add the handlers to the train_logger
 logger.addHandler(fh)
-# logger.addHandler(ch)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -102,9 +95,6 @@ def gen_inp_data_set(seq_data: torch.Tensor, static_data: np.array):
         inp = seq_data[i, 0:-1]
         target = seq_data[i, 1:]
         yield inp, target, static_data[i]
-
-
-from typing import Tuple
 
 
 def validate(eval_model, seq_data, static_data) -> Tuple[float, float]:
@@ -168,7 +158,6 @@ static_tokenizer = DistilBertTokenizer.from_pretrained(
     return_tensors="pt",
     vocab_file="./distilbert_weights/vocab.txt",
 )
-
 
 if load_chkpnt:  # continue training
     model_path = (
@@ -237,7 +226,6 @@ for i in range(epoch, num_epochs):
             checkpoint_path,
         )
 
-
 torch.save(model.state_dict(), f"./saved_models/{model_name}.ptm")
 
 
@@ -263,18 +251,3 @@ def load_model(device: torch.device):
     model.eval()
     model.to(device)
     return model
-
-
-# model = load_model(device)
-
-# trnseq, tstseq, trnstat, tststat = get_dat_data(split_frac=0.8)
-# (
-#     numer_trn_act_seqs,
-#     numer_tst_act_seqs,
-#     numer_trn_static_data,
-#     numer_tst_static_data,
-# ) = process(trnseq, trnstat, tstseq, tststat, 5 + 1)
-
-# trnseq.apply(truncate_series_by_len, args=(6,))
-
-# trnseq[0][:6]

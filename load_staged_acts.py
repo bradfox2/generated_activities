@@ -1,6 +1,9 @@
 """loads long dataset of staged acts with the cr details, and makes staged act sequences grouped by crs"""
 
-import pandas
+from typing import List
+
+import pandas as pd
+
 from utils import set_seed
 
 set_seed(0)
@@ -20,9 +23,28 @@ def create_act_seqs(df, seq_field_names, group_column_name="CR_CD"):
     return act_seqs
 
 
-def get_dat_data(split_frac: float = 0.8):
-    cr_data = pandas.read_csv(
-        "staged_activities.csv",
+feature_cols = [
+    "LI_QCLS_CD",
+    "LI_FAIL_CD",
+    "CAP_CLASS",
+    "RESPONSIBLE_GROUP",
+    "DESCR",
+    "LEADER_COMMENT",
+]
+
+
+def textify_feature_data(cr_data, feature_cols):
+    cr_data["TEXT"] = ""
+    for col in feature_cols:
+        cr_data["TEXT"] += f" [{col}] " + cr_data.get(col, "[SEP]").astype(str)
+
+    return cr_data
+
+
+def prep_feature_data(csv_path: str, feature_cols: List) -> pd.DataFrame:
+    """get data from csv and textify it"""
+    cr_data = pd.read_csv(
+        csv_path,
         dtype={k: object for k in staged_activity_fields},
         parse_dates=True,
         # keep most of the pandas default nan values, but not the N/A which
@@ -51,32 +73,28 @@ def get_dat_data(split_frac: float = 0.8):
     )
     cr_data = cr_data.sample(frac=1, random_state=1)
 
-    # Add Leader comment
+    return textify_feature_data(cr_data, feature_cols)
 
-    cr_data["TEXT"] = ""
 
-    for col in [
-        "LI_QCLS_CD",
-        "LI_FAIL_CD",
-        "CAP_CLASS",
-        "RESPONSIBLE_GROUP",
-        "DESCR",
-        "LEADER_COMMENT",
-    ]:
-        cr_data["TEXT"] += f" [{col}] " + cr_data.get(col, "[SEP]").astype(str)
-
-    with open("staged_act_test_crs.txt", "r") as f:
-        test_set = f.read().splitlines()
+def get_dat_data(split_frac: float, feature_cols: List):
+    """ get data from the csv, extract columns and split into test/train"""
+    cr_data = prep_feature_data("staged_activites.csv", feature_cols)
 
     tst_data = cr_data[
-        cr_data.CR_CD.isin(cr_data.sample(frac=0.2, random_state=1).CR_CD)
+        cr_data.CR_CD.isin(cr_data.sample(frac=1.0 - split_frac, random_state=1).CR_CD)
     ]
+
     assert len(tst_data) > 1, "Need tst data."
     trn_data = cr_data[~cr_data.CR_CD.isin(tst_data.CR_CD)]
+
     assert len(trn_data) > 1, "Need training data."
+
     trn_act_seqs = create_act_seqs(trn_data, staged_activity_fields)
+
     trn_static_data = trn_data[["CR_CD", "TEXT"]].drop_duplicates().set_index("CR_CD")
+
     trn_static_data = trn_static_data[trn_static_data.index.isin(trn_act_seqs.index)]
+
     trn_static_data = trn_static_data.reindex(trn_act_seqs.index)
 
     assert len(trn_static_data) == len(trn_act_seqs)
@@ -91,4 +109,3 @@ def get_dat_data(split_frac: float = 0.8):
 
 if __name__ == "__main__":
     get_dat_data()
-

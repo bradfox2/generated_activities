@@ -277,12 +277,18 @@ class SAModel(nn.Module):
             :, :, 0
         ]  # (target sequence length x batch size)
 
-        tfmr_out = self.transformer_decoder(
-            cats_combined_embedding,
-            memory=static_data_embedding,
-            tgt_mask=self.mask.to(self.device),
-            tgt_key_padding_mask=tgt_key_pad_mask,  # .to(self.device),
-        )
+        if self.training:    
+            tfmr_out = self.transformer_decoder(
+                cats_combined_embedding,
+                memory=static_data_embedding,
+                tgt_mask=self.mask.to(self.device),
+                tgt_key_padding_mask=tgt_key_pad_mask,  # .to(self.device),
+            )
+        else:
+            tfmr_out = self.transformer_decoder(
+                cats_combined_embedding,
+                memory=static_data_embedding)
+            
 
         tfmr_out = self.classification_tnsr_drop(tfmr_out)
         classification_layer_outputs = []

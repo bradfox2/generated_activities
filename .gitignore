@@ -13,7 +13,8 @@ saved_models/*
 scratch*
 runs/*
 *.code-workspace
-
+data/
 
 !vocab.txt
 !.gitkeep
+.env

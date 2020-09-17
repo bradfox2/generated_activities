@@ -18,17 +18,19 @@ sequence_length = (
     5  # maximum number of independent category groups that make up a sequence
 )
 num_act_cats = 4  # number of independent fields in a category group
-batch_sz = 32  # minibatch size, sequences of independent cat groups to be processed in parallel
-emb_dim = 16  # embedding dim for each categorical
-embedding_dim_into_tran = (
-    emb_dim * num_act_cats
-)  # embedding dim size into transformer layers
-num_attn_heads = 1  # number of transformer attention heads
-num_dec_layers = 1  # number of transformer decoder layers (main layers)
-bptt = sequence_length  # back prop through time or sequence length, how far the lookback window goes
+categorical_embedding_dim = 192  # embedding dim for each categorical
+# embedding_dim_into_tran = (
+#     emb_dim * num_act_cats
+# )  # embedding dim size into transformer layers
+num_attn_heads = 8  # number of transformer attention heads
+num_transformer_layers = 4  # number of transformer decoder layers (main layers)
+num_hidden = categorical_embedding_dim * 4
+bptt = (
+    sequence_length + 2
+)  # back prop through time or sequence length, how far the lookback window goes
 
 
-model_name = "SIAG_very_small"
+model_name = "SIAG4"
 fields = f"{model_name}_fields.pkl"
 
 # load model and fields(tokenizers) needed
@@ -40,57 +42,67 @@ static_tokenizer = DistilBertTokenizer.from_pretrained(
     "distilbert-base-uncased", return_tensors="pt"
 )
 
-type_ = IndependentCategorical.from_torchtext_field("type_", TYPE)
-subtype = IndependentCategorical.from_torchtext_field("subtype", SUBTYPE)
-lvl = IndependentCategorical.from_torchtext_field("lvl", LVL)
-respgroup = IndependentCategorical.from_torchtext_field("respgroup", RESPGROUP)
+type_ = IndependentCategorical.from_torchtext_field("type_", TYPE, 1)
+subtype = IndependentCategorical.from_torchtext_field("subtype", SUBTYPE, 1)
+lvl = IndependentCategorical.from_torchtext_field("lvl", LVL, 1)
+respgroup = IndependentCategorical.from_torchtext_field("respgroup", RESPGROUP, 1)
 
 model = SAModel(
     sequence_length,
-    emb_dim,
+    categorical_embedding_dim,
     num_attn_heads,
-    num_dec_layers,
+    num_hidden,
+    num_transformer_layers,
     learning_rate=1e-3,
-    learning_rate_decay_rate=0.98,
     independent_categoricals=[type_, subtype, lvl, respgroup],
+    freeze_static_model_weights=True,
+    warmup_steps=1,
+    total_steps=1,
+    static_data_embedding_size=768,
+    dropout=0.2,
+    grad_norm_clip=1.0,
     device=torch.device("cpu"),
 )
 
 model_state_dict = torch.load(f"./saved_models/{model_name}.ptm", map_location="cpu",)
 model.load_state_dict(model_state_dict)
 
-static_data = """'Revision to the Surveillance Testing procedure added definition of and amended a form to require recording of the ST Commencement date.  While the changes support and correspond to the established appropriate method of managing ST records and test performance intervals, ST have questioned the implications of the 
-new documentation requirement.  Discussions with ST Performance Group representatives have identified the changes contradict a longstanding misconception regarding the ST interval clocking 
-basis [i.e., understood to be based upon ST Acceptance Review completion versus ST Commencement date].  Clarification is suggested as an enhancement to bring a common understanding and ease of procedure use, no violation of procedure adherence is identified.   
-Suggest the following Action Items be developed and assigned to resolve: PCR is needed to add the clarification to 73DP-9ZZ14 Surveillance Testing procedure regarding the importance of the ST Commencement Date for ST interval tracking.  Following text or similar to be added ? `Surveillance Test Commencement dates are used to establish ST performance intervals.  
-Scheduled Start dates for ST performances should be closely observed.  ST commencement prior to the scheduled Start date extends the interval between that ST and the next scheduled ST Start date, and may result in the maximum ST interval being exceeded.? Action Item assigned to SPCG Unit 8219 to provide clarification to the ST performance groups regarding the Commencement date as 
-the ST interval clocking bases and the importance of the Commencement Date entry in SWMS. Action Item assigned to SPCG Unit 8219 Benchmark to find out how other stations are calculating surveillance test intervals.'"""
+from data.get_data import get_cr_feature_data
 
-static_data = static_tokenizer(
-    [static_data], padding=True, truncation=True, return_tensors="pt"
-)
 
-seq_data = pandas.Series([[["<sos>"] * 4]]).apply(
-    numericalize, args=[TYPE, SUBTYPE, LVL, RESPGROUP]
-)
-seq_data = torch.tensor(seq_data)
+def predict(cr_cd, cap_class, resp_group):
 
-model.eval()
-with torch.no_grad():
-    t, st, l, rg = None, None, None, None
-    while t is not TYPE.vocab.stoi["<eos>"] and len(seq_data) <= 6:
-        t, st, l, rg = model(seq_data, static_data)
-        t = t[-1].argmax()
-        st = st[-1].argmax()
-        l = l[-1].argmax()
-        rg = rg[-1].argmax()
-        next_seq = torch.tensor([[[t, st, l, rg]]])
-        seq_data = torch.cat((seq_data, next_seq))
-        print(
-            TYPE.vocab.itos[t],
-            SUBTYPE.vocab.itos[st],
-            LVL.vocab.itos[l],
-            RESPGROUP.vocab.itos[rg],
-        )
-    print(seq_data)
+    feature_data = get_cr_feature_data(cr_cd, cap_class, resp_group)[0]
+
+    static_data = static_tokenizer(
+        [feature_data], padding=True, truncation=True, return_tensors="pt"
+    )
+
+    seq_data = pandas.Series([[["<sos>"] * 4]]).apply(
+        numericalize, args=[TYPE, SUBTYPE, LVL, RESPGROUP]
+    )
+    seq_data = torch.tensor(seq_data)
+
+    model.eval()
+    with torch.no_grad():
+        t, st, l, rg = None, None, None, None
+        while (t.item() if t else None) != TYPE.vocab.stoi["<eos>"] and len(
+            seq_data
+        ) <= 6:
+            t, st, l, rg = model(seq_data, static_data)
+            t = t[-1].argmax()
+            st = st[-1].argmax()
+            l = l[-1].argmax()
+            rg = rg[-1].argmax()
+            next_seq = torch.tensor([[[t, st, l, rg]]])
+            seq_data = torch.cat((seq_data, next_seq))
+            print(
+                TYPE.vocab.itos[t],
+                SUBTYPE.vocab.itos[st],
+                LVL.vocab.itos[l],
+                RESPGROUP.vocab.itos[rg],
+            )
+            print(feature_data)
+
+predict("20-11517", "N", "8516")
 
