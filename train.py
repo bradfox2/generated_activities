@@ -17,7 +17,7 @@ from data_processing import (
     batchify_static_data,
     process,
 )
-from load_staged_acts import get_dat_data
+from load_staged_acts import get_dat_data, feature_cols
 from model import IndependentCategorical, SAModel
 from utils import field_accuracy, field_printer, set_seed
 
@@ -38,7 +38,7 @@ logger.addHandler(fh)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-trnseq, tstseq, trnstat, tststat = get_dat_data(split_frac=0.8)
+trnseq, tstseq, trnstat, tststat = get_dat_data(0.8, feature_cols)
 
 sequence_length = (
     5  # maximum number of independent category groups that make up a sequence
@@ -89,7 +89,7 @@ static_data_tst = batchify_static_data(
 
 # dims (mini_batch(batch_sz) x bptt x act_cats)
 def gen_inp_data_set(seq_data: torch.Tensor, static_data: np.array):
-    """generator that advances through the 'group-of-sequences' dimension, 
+    """generator that advances through the 'group-of-sequences' dimension,
     one group at a time, generating sequence input and target sets and static data"""
     for i in range(len(seq_data)):
         inp = seq_data[i, 0:-1]

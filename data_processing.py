@@ -138,16 +138,12 @@ def process(
     tst_static_data: Series,
     max_len: int,
 ):
-    """ Main data processing function that will build independent category tokenizers, 
+    """Main data processing function that will build independent category tokenizers,
     numericalize the tokens, and truncate and pad to maximum sequence length."""
-    logger.info(
-        f"Training Records: {len(trn_act_seqs)}"
-    )
-    
-    logger.info(
-        f"Test Records: {len(tst_act_seqs)}"
-    )
 
+    logger.info(f"Training Records: {len(trn_act_seqs)}")
+
+    logger.info(f"Test Records: {len(tst_act_seqs)}")
 
     TYPE.build_vocab(
         [
