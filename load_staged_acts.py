@@ -12,7 +12,7 @@ set_seed(0)
 
 
 def create_act_seqs(df, seq_field_names, group_column_name="CR_CD"):
-    StagedActsDataset.create_act_seqs(df)
+    return StagedActsDataset.create_act_seqs(df)
 
 
 feature_cols = [
@@ -50,7 +50,7 @@ def get_dat_data(file: str, split_frac: float, feature_cols: List):
 
     assert len(trn_data) > 1, "Need training data."
 
-    trn_act_seqs = create_act_seqs(trn_data, staged_activity_fields)
+    trn_act_seqs = create_act_seqs(trn_data, StagedActsDataset.staged_activity_fields)
 
     trn_static_data = trn_data[["CR_CD", "TEXT"]].drop_duplicates().set_index("CR_CD")
 
@@ -60,7 +60,7 @@ def get_dat_data(file: str, split_frac: float, feature_cols: List):
 
     assert len(trn_static_data) == len(trn_act_seqs)
 
-    tst_act_seqs = create_act_seqs(tst_data, staged_activity_fields)
+    tst_act_seqs = create_act_seqs(tst_data, StagedActsDataset.staged_activity_fields)
     tst_static_data = tst_data[["CR_CD", "TEXT"]].drop_duplicates().set_index("CR_CD")
     tst_static_data = tst_static_data[tst_static_data.index.isin(tst_act_seqs.index)]
     tst_static_data = tst_static_data.reindex(tst_act_seqs.index)
@@ -96,7 +96,7 @@ class StagedActsDataset(Dataset):
         if self.transform:
             sample = self.transform(sample)
 
-        return sample.to_dict()
+        return sample
 
     def _process_raw_data(self):
         data = self.raw_data.copy(deep=True).drop_duplicates().reset_index()
@@ -158,14 +158,16 @@ class Textify(object):
     def __call__(self, data) -> pd.DataFrame:
         data["TEXT"] = ""
         for col in self.feature_cols:
-            data["TEXT"] += f" [{col}] " + str(data.get(col, "[SEP]"))
+            data["TEXT"] += (
+                f" [{col}] " + data.get(col).astype(str)
+                if data.get(col, None)
+                else "[SEP]"
+            )
         return data
 
 
 if __name__ == "__main__":
+    pass
     # get_dat_data()
-
     sa = StagedActsDataset("staged_activities.csv", Textify(feature_cols))
-    dl = DataLoader(sa, batch_size=4, shuffle=True, num_workers=0)
-
-    sa[0]
+    # trn, tst = torch.utils.data.random_split(sa, [l := int(len(sa) * 0.8), len(sa) - l])

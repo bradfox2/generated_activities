@@ -17,7 +17,11 @@ from utils import get_field_term_weights
 
 class IndependentCategorical(object):
     def __init__(
-        self, name: str, num_levels: int, padding_idx: int, term_weights: List[Tensor],
+        self,
+        name: str,
+        num_levels: int,
+        padding_idx: int,
+        term_weights: List[Tensor],
     ) -> None:
         """ independent categorical used to create embedding and classification layers"""
         self.name = name
@@ -127,7 +131,10 @@ class SAModel(nn.Module):
         self.grad_norm_clip = grad_norm_clip
         self.mask = None
         self.transformer_decoder_layer = nn.TransformerDecoderLayer(
-            self.transformer_dim_sz, self.num_attn_heads, self.num_hidden, self.dropout,
+            self.transformer_dim_sz,
+            self.num_attn_heads,
+            self.num_hidden,
+            self.dropout,
         )
         self.transformer_decoder = nn.TransformerDecoder(
             self.transformer_decoder_layer, self.num_transformer_layers
@@ -163,8 +170,10 @@ class SAModel(nn.Module):
 
         assert self._pad_tokens_identical()
         self.tgt_pad_idx = self.independent_categoricals[0].padding_idx
-        self.scheduler = transformers.get_cosine_with_hard_restarts_schedule_with_warmup(
-            self.optimizer, self.warmup_steps, self.total_steps, 6
+        self.scheduler = (
+            transformers.get_cosine_with_hard_restarts_schedule_with_warmup(
+                self.optimizer, self.warmup_steps, self.total_steps, 6
+            )
         )
 
     def _pad_tokens_identical(self):
@@ -233,8 +242,8 @@ class SAModel(nn.Module):
             layer.bias.data.zero_()
 
     def _generate_square_target_mask(self, seq_len):
-        """ Generates a top right triangle square mask of the target sequence.  
-        Prevents attending to targets that only exist forward in time. """
+        """Generates a top right triangle square mask of the target sequence.
+        Prevents attending to targets that only exist forward in time."""
         tgt_mask = (torch.triu(torch.ones(seq_len, seq_len)) == 1).transpose(0, 1)
         tgt_mask = (
             tgt_mask.float()
@@ -277,7 +286,7 @@ class SAModel(nn.Module):
             :, :, 0
         ]  # (target sequence length x batch size)
 
-        if self.training:    
+        if self.training:
             tfmr_out = self.transformer_decoder(
                 cats_combined_embedding,
                 memory=static_data_embedding,
@@ -286,9 +295,8 @@ class SAModel(nn.Module):
             )
         else:
             tfmr_out = self.transformer_decoder(
-                cats_combined_embedding,
-                memory=static_data_embedding)
-            
+                cats_combined_embedding, memory=static_data_embedding
+            )
 
         tfmr_out = self.classification_tnsr_drop(tfmr_out)
         classification_layer_outputs = []
