@@ -12,11 +12,44 @@ set_seed(0)
 logger = logging.getLogger(__name__)
 # trn_act_seqs, trn_static_data, tst_act_seqs, tst_static_data = get_dat_data()
 
+from load_staged_acts import TTFieldWrapper
+
 eos_token = "<eos>"
 init_token = "<sos>"
 pad_token = "<pad>"
 
-TYPE = torchtext.data.Field(
+TYPE = TTFieldWrapper(
+    sequential=False,
+    unk_token="<unk>",
+    lower=True,
+    eos_token=eos_token,
+    init_token=init_token,
+    pad_token=pad_token,
+    min_frequency=100,
+)
+
+SUBTYPE = TTFieldWrapper(
+    sequential=False,
+    unk_token="<unk>",
+    lower=True,
+    eos_token=eos_token,
+    init_token=init_token,
+    pad_token=pad_token,
+    min_frequency=15,
+)
+
+LVL = TTFieldWrapper(
+    sequential=False,
+    unk_token="<unk>",
+    lower=True,
+    eos_token=eos_token,
+    init_token=init_token,
+    pad_token=pad_token,
+    min_frequency=50,
+)
+
+RESPGROUP = TTFieldWrapper(
+    min_frequency=7,
     sequential=False,
     unk_token="<unk>",
     lower=True,
@@ -25,32 +58,11 @@ TYPE = torchtext.data.Field(
     pad_token=pad_token,
 )
 
-SUBTYPE = torchtext.data.Field(
-    sequential=False,
-    unk_token="<unk>",
-    lower=True,
-    eos_token=eos_token,
-    init_token=init_token,
-    pad_token=pad_token,
-)
 
-LVL = torchtext.data.Field(
-    sequential=False,
-    unk_token="<unk>",
-    lower=True,
-    eos_token=eos_token,
-    init_token=init_token,
-    pad_token=pad_token,
-)
-
-RESPGROUP = torchtext.data.Field(
-    sequential=False,
-    unk_token="<unk>",
-    lower=True,
-    eos_token=eos_token,
-    init_token=init_token,
-    pad_token=pad_token,
-)
+class TTFieldWrapper(torchtext.data.Field):
+    def __init__(self, min_frequency: int, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.min_frequency = min_frequency
 
 
 def pad(series_element, pad_len, pad_token, num_fields_to_pad):
@@ -191,10 +203,10 @@ def process(
         add_start_stop_and_numericalize_and_pad, args=(max_len,)
     )
 
-    numer_trn_static_data = trn_static_data["TEXT"].fillna("<unk>")  # .apply(
+    numer_trn_static_data = trn_static_data["TEXT"]  # .fillna("<unk>")  # .apply(
     # lambda x: tokenizer.encode(x[:512])
     # )
-    numer_tst_static_data = tst_static_data["TEXT"].fillna("<unk>")  # .apply(
+    numer_tst_static_data = tst_static_data["TEXT"]  # .fillna("<unk>")  # .apply(
     # lambda x: tokenizer.encode(x[:512])
     # )
 

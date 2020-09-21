@@ -2,10 +2,11 @@
 
 from typing import Any, List
 
+import numpy as np
 import pandas as pd
 import torch
+import torchtext
 from torch.utils.data import DataLoader, Dataset
-import numpy as np
 
 from utils import set_seed
 
@@ -93,7 +94,8 @@ class StagedActsDataset(Dataset):
         sample = self.data.iloc[idx]
 
         if self.transform:
-            sample = self.transform(sample)
+            for f in self.transform:
+                sample = f(sample)
 
         return sample
 
@@ -165,11 +167,168 @@ class Textify(object):
         return data
 
 
+class TTFieldWrapper(torchtext.data.Field):
+    """adds a min frequency property to the torchtext.data.Field class"""
+
+    def __init__(self, min_frequency: int, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.min_frequency = min_frequency
+
+
+class StagedActsDatasetProcessor:
+    """trains torchtext fields on the sequences of ind cat categories.
+    fields should be positioned in the passed list in the order of the sequence category"""
+
+    def __init__(
+        self,
+        dataset: StagedActsDataset,
+        fields: List[TTFieldWrapper],
+        max_len: int,
+        train=False,
+        shuffle=True,
+        split=0.8,
+    ):
+        self.dataset = dataset
+        self.fields = fields
+        self.split = split
+        self.shuffle = shuffle
+        self.train = train
+        self.num_train_recs = int(len(self.dataset) * split)
+        self.max_len = max_len
+        self.eos_token = "<eos>"
+        self.init_token = "<sos>"
+        self.pad_token = "<pad>"
+        self.unprocessed_data = (
+            self.dataset[: self.num_train_recs]
+            if self.train
+            else self.dataset[self.num_train_recs :]
+        )
+        self.seq_data = self.process_seq_data(
+            self.unprocessed_data["field_sequence"], train_fields=self.train
+        ).rename("field_sequence_num")
+        self.data = self.seq_data.to_frame().merge(
+            self.unprocessed_data, left_index=True, right_index=True
+        )
+
+    def __getitem__(self, index):
+        return self.data[index]
+
+    def __len__(self):
+        return len(self.data)
+
+    def process_seq_data(self, field_sequence: pd.Series, train_fields):
+        if train_fields:
+            self._train_fields(field_sequence=field_sequence)
+        act_seqs = field_sequence.apply(lambda x: x[: self.max_len - 2])
+        numer_act_seqs = act_seqs.apply(  # type: ignore
+            self.add_start_stop_and_numericalize_and_pad,
+            args=(
+                self.max_len,
+                self.fields,
+                self.init_token,
+                self.eos_token,
+                self.pad_token,
+            ),
+        )
+        return numer_act_seqs
+
+    def _train_fields(self, field_sequence: pd.Series):
+        """Trains the torch text field tokenizer representing each independent category.
+        We need to keep the tokenizers independent for the categorical levels, so that the associated embedding will remain independent"""
+        for idx, field in enumerate(self.fields):
+            field.build_vocab(
+                [
+                    [act[idx] for act in actlist if not pd.isna(act[idx])]
+                    for actlist in field_sequence
+                ],
+                specials=["<pad>"],
+                min_freq=field.min_frequency,
+            )
+
+    def __len__(self):
+        return len(self.dataset)
+
+    @staticmethod
+    def numericalize(act_seq, fields: List[TTFieldWrapper]):
+        """ convert the independent category values into the integer representation"""
+        return [
+            [field.vocab.stoi[act[idx]] for idx, field in enumerate(fields)]
+            for act in act_seq
+        ]
+
+    @staticmethod
+    def add_start_stop_and_numericalize_and_pad(
+        act_seq, max_len, fields, init_token, eos_token, pad_token
+    ):
+        """ add the start and stop groups to each sequence, and pad out each seq to the max len specified """
+        if pd.isna(act_seq[0][0]):
+            act_seq = [
+                [field.vocab.stoi[init_token] for field in fields],
+                [field.vocab.stoi[eos_token] for field in fields],
+            ]
+            # assume type, st, lvl, rg have pad tokens that reference the same numericalized value
+            act_seq.extend(
+                [[fields[0].vocab.stoi[pad_token]] * 4] * (max_len - len(act_seq))
+            )
+            return act_seq
+
+        else:
+            act_seq.insert(0, [init_token] * len(act_seq[0]))
+            act_seq.append([eos_token] * len(act_seq[0]))
+            act_seq.extend([[pad_token] * 4] * (max_len - len(act_seq)))
+            return StagedActsDatasetProcessor.numericalize(act_seq, fields)
+
+
 if __name__ == "__main__":
     pass
-    sa = StagedActsDataset("staged_activities.csv", Textify(feature_cols))
-    trn, tst = torch.utils.data.random_split(sa, [l := int(len(sa) * 0.8), len(sa) - l])
+    sa = StagedActsDataset("staged_activities.csv", [Textify(feature_cols)])
 
-    sa[:][-sa[:].TEXT.isna()]
+    trn, tst = torch.utils.data.random_split(sa, [l := int(len(sa) * 0.8), len(sa) - l])  # type: ignore
 
-    trn[:]
+    eos_token = "<eos>"
+    init_token = "<sos>"
+    pad_token = "<pad>"
+
+    TYPE = TTFieldWrapper(
+        sequential=False,
+        unk_token="<unk>",
+        lower=True,
+        eos_token=eos_token,
+        init_token=init_token,
+        pad_token=pad_token,
+        min_frequency=100,
+    )
+
+    SUBTYPE = TTFieldWrapper(
+        sequential=False,
+        unk_token="<unk>",
+        lower=True,
+        eos_token=eos_token,
+        init_token=init_token,
+        pad_token=pad_token,
+        min_frequency=15,
+    )
+
+    LVL = TTFieldWrapper(
+        sequential=False,
+        unk_token="<unk>",
+        lower=True,
+        eos_token=eos_token,
+        init_token=init_token,
+        pad_token=pad_token,
+        min_frequency=50,
+    )
+
+    RESPGROUP = TTFieldWrapper(
+        min_frequency=7,
+        sequential=False,
+        unk_token="<unk>",
+        lower=True,
+        eos_token=eos_token,
+        init_token=init_token,
+        pad_token=pad_token,
+    )
+
+    a = StagedActsDatasetProcessor(
+        sa, [TYPE, SUBTYPE, LVL, RESPGROUP], max_len=6, train=True, shuffle=True
+    )

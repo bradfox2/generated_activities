@@ -34,8 +34,8 @@ class IndependentCategorical(object):
         cls, name: str, field: Field, total_num_samples: int, padding_token="<pad>"
     ):
         num_levels: int = len(field.vocab.itos)
-        padding_idx: int = field.vocab.stoi[padding_token]
-        term_weights: Tensor = get_field_term_weights(field, total_num_samples)
+        padding_idx: int = field.vocab.stoi[padding_token]  # type: ignore
+        term_weights: Tensor = get_field_term_weights(field, total_num_samples)  # type: ignore
         return IndependentCategorical(name, num_levels, padding_idx, term_weights)
 
 
@@ -64,18 +64,18 @@ class PositionalEncoding(nn.Module):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
 
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
+        pe = torch.zeros(max_len, d_model)  # type: ignore
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)  # type: ignore
+        div_term = torch.exp(  # type: ignore
+            torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)  # type: ignore
         )
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
+        pe[:, 0::2] = torch.sin(position * div_term)  # type: ignore
+        pe[:, 1::2] = torch.cos(position * div_term)  # type: ignore
         pe = pe.unsqueeze(0).transpose(0, 1)
         self.register_buffer("pe", pe)
 
     def forward(self, x):
-        x = x + self.pe[: x.size(0), :]
+        x = x + self.pe[: x.size(0), :]  # type: ignore
         return self.dropout(x)
 
 

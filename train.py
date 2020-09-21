@@ -17,7 +17,13 @@ from data_processing import (
     batchify_static_data,
     process,
 )
-from load_staged_acts import get_dat_data, feature_cols, StagedActsDataset, Textify
+from load_staged_acts import (
+    get_dat_data,
+    feature_cols,
+    StagedActsDataset,
+    Textify,
+    StagedActsDatasetProcessor,
+)
 from model import IndependentCategorical, SAModel
 from utils import field_accuracy, field_printer, set_seed
 
@@ -38,18 +44,37 @@ logger.addHandler(fh)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-trnseq, tstseq, trnstat, tststat = get_dat_data(
-    "staged_activities.csv", 0.8, feature_cols
-)
-sa = StagedActsDataset("staged_activities.csv", Textify(feature_cols))
-seq = sa[:].field_sequence
-stat = sa[:].TEXT
 sequence_length = (
     5  # maximum number of independent category groups that make up a sequence
 )
+
+sa = StagedActsDataset(
+    "staged_activities.csv", [Textify(feature_cols)]
+)  # TODO should implement a train test split tracking here
+
+trn_sadp = StagedActsDatasetProcessor(
+    sa,
+    [TYPE, SUBTYPE, LVL, RESPGROUP],
+    max_len=sequence_length + 1,
+    train=True,
+    shuffle=True,
+)
+numer_trn_act_seqs = trn_sadp["field_sequence_num"]
+numer_trn_static_data = trn_sadp["TEXT"]
+tst_sadp = StagedActsDatasetProcessor(
+    sa,
+    [TYPE, SUBTYPE, LVL, RESPGROUP],
+    max_len=sequence_length + 1,
+    train=False,
+    shuffle=True,  # TODO train test data will not be consistent with shuffle implementation now
+)
+numer_tst_act_seqs = tst_sadp["field_sequence_num"]
+numer_tst_static_data = tst_sadp["TEXT"]
+
+
 num_act_cats = 4  # number of independent fields in a category group
 batch_sz = 12  # minibatch size, sequences of independent cat groups to be processed in parallel
-rec_len = len(trnseq) // batch_sz  # num records in training set, used for batchifying
+rec_len = len(trn_sadp) // batch_sz  # num records in training set, used for batchifying
 emb_dim = 192  # embedding dim for each categorical
 embedding_dim_into_tran = (
     emb_dim * num_act_cats
@@ -63,23 +88,23 @@ bptt = (
 num_epochs = 250
 
 # tokenize, truncate, pad
-(
-    numer_trn_act_seqs,
-    numer_tst_act_seqs,
-    numer_trn_static_data,
-    numer_tst_static_data,
-) = process(trnseq, trnstat, tstseq, tststat, sequence_length + 1)
+# (
+#     numer_trn_act_seqs,
+#     numer_tst_act_seqs,
+#     numer_trn_static_data,
+#     numer_tst_static_data,
+# ) = process(trnseq, trnstat, tstseq, tststat, sequence_length + 1)
 
-# check to ensure data is good
-assert (
-    len(trnseq[~trnseq.index.isin(numer_trn_act_seqs.index)]) == 0
-), "Records are being dropped during processing"
-assert trnseq.index.identical(
-    numer_trn_act_seqs.index
-), "Mismatch between seq tokenized data and seq numericalized data."
-assert numer_trn_static_data.index.identical(
-    numer_trn_act_seqs.index
-), "Mismatch between static data and seq data."
+# # check to ensure data is good
+# assert (
+#     len(sa[:][~trnseq.index.isin(numer_trn_act_seqs.index)]) == 0
+# ), "Records are being dropped during processing"
+# assert trnseq.index.identical(
+#     numer_trn_act_seqs.index
+# ), "Mismatch between seq tokenized data and seq numericalized data."
+# assert numer_trn_static_data.index.identical(
+#     numer_trn_act_seqs.index
+# ), "Mismatch between static data and seq data."
 
 seq_data_trn = batchify_act_seqs(numer_trn_act_seqs, batch_sz).contiguous().to(device)
 seq_data_tst = batchify_act_seqs(numer_tst_act_seqs, batch_sz).contiguous().to(device)
@@ -133,7 +158,7 @@ def validate(eval_model, seq_data, static_data) -> Tuple[float, float]:
 
 
 fields = [TYPE, SUBTYPE, LVL, RESPGROUP]
-total_trn_samples = len(trnseq)
+total_trn_samples = len(trn_sadp)
 type_ = IndependentCategorical.from_torchtext_field("type_", TYPE, total_trn_samples)
 subtype = IndependentCategorical.from_torchtext_field(
     "subtype", SUBTYPE, total_trn_samples
