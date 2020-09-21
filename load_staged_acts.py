@@ -5,6 +5,7 @@ from typing import Any, List
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader, Dataset
+import numpy as np
 
 from utils import set_seed
 
@@ -15,14 +16,14 @@ def create_act_seqs(df, seq_field_names, group_column_name="CR_CD"):
     return StagedActsDataset.create_act_seqs(df)
 
 
-feature_cols = [
-    "LI_QCLS_CD",
-    "LI_FAIL_CD",
-    "CAP_CLASS",
-    "RESPONSIBLE_GROUP",
-    "DESCR",
-    "LEADER_COMMENT",
-]
+feature_cols = {
+    "LI_QCLS_CD": str,
+    "LI_FAIL_CD": str,
+    "CAP_CLASS": str,
+    "RESPONSIBLE_GROUP": str,
+    "DESCR": str,
+    "LEADER_COMMENT": str,
+}
 
 
 def textify_feature_data(cr_data, feature_cols):
@@ -77,8 +78,6 @@ class StagedActsDataset(Dataset):
         "SA_WRK_RESP_ORG_UNIT": object,
     }
 
-    type_overrides = {"RESPONSIBLE_GROUP": object}
-
     def __init__(self, csv_path, transform=None):
         self.raw_data = self.get_data(csv_path)
         self.data = self._process_raw_data()
@@ -107,7 +106,7 @@ class StagedActsDataset(Dataset):
     def get_data(cls, csv_path) -> pd.DataFrame:
         return pd.read_csv(  # type: ignore
             csv_path,
-            dtype=dict(cls.staged_activity_fields, **cls.type_overrides),
+            dtype=dict(cls.staged_activity_fields, **feature_cols),
             parse_dates=True,
             # keep most of the pandas default nan values, but not the N/A which
             # is what is used for acts that have 3/4 fields filled and one field
@@ -130,6 +129,10 @@ class StagedActsDataset(Dataset):
                 "null",
                 None,
                 "",
+                " ",
+                "  ",
+                "?",
+                "NONE",
             ],
             keep_default_na=False,
         )
@@ -158,16 +161,15 @@ class Textify(object):
     def __call__(self, data) -> pd.DataFrame:
         data["TEXT"] = ""
         for col in self.feature_cols:
-            data["TEXT"] += (
-                f" [{col}] " + data.get(col).astype(str)
-                if data.get(col, None)
-                else "[SEP]"
-            )
+            data["TEXT"] += f" [{col}] " + data.get(col, "[SEP]").fillna("[SEP]")
         return data
 
 
 if __name__ == "__main__":
     pass
-    # get_dat_data()
     sa = StagedActsDataset("staged_activities.csv", Textify(feature_cols))
-    # trn, tst = torch.utils.data.random_split(sa, [l := int(len(sa) * 0.8), len(sa) - l])
+    trn, tst = torch.utils.data.random_split(sa, [l := int(len(sa) * 0.8), len(sa) - l])
+
+    sa[:][-sa[:].TEXT.isna()]
+
+    trn[:]
