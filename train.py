@@ -42,7 +42,7 @@ formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(messag
 fh.setFormatter(formatter)
 logger.addHandler(fh)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # type: ignore
 
 sequence_length = (
     5  # maximum number of independent category groups that make up a sequence
@@ -150,11 +150,11 @@ def validate(eval_model, seq_data, static_data) -> Tuple[float, float]:
         logger.info(f"Mean Val Acc: {avg_val_acc}")
         logger.info(
             [
-                field_printer(field, preds[idx], tgt[..., idx])
+                field_printer(field, preds[idx], tgt[..., idx])  # type: ignore
                 for idx, field in enumerate(fields)
             ]
         )
-        return (val_loss.item() / len(seq_data), sum(avg_val_acc) / len(avg_val_acc))
+        return (val_loss.item() / len(seq_data), sum(avg_val_acc) / len(avg_val_acc))  # type: ignore
 
 
 fields = [TYPE, SUBTYPE, LVL, RESPGROUP]
@@ -177,7 +177,7 @@ model = SAModel(
     learning_rate=1e-5,
     independent_categoricals=[type_, subtype, lvl, respgroup],
     freeze_static_model_weights=False,
-    warmup_steps=(rec_len) * 1.5,  # about 1 epoch
+    warmup_steps=int((rec_len) * 1.5),  # about 1 epoch
     total_steps=num_epochs * (rec_len),
     device=device,
 )
@@ -227,7 +227,7 @@ for i in range(epoch, num_epochs):
             loss_tracker.append(epoch_loss / log_interval)
             logger.info(f"Epoch: {i}")
             logger.info(f"Record: {counter}/{rec_len}")
-            logger.info(f"LR: {model.scheduler.get_last_lr()[0]}")
+            logger.info(f"LR: {model.scheduler.get_last_lr()[0]}")  # type: ignore
             logger.info(f"Loss: {(epoch_loss / log_interval):.3f}")
             epoch_loss = 0.0
     epoch_avg_loss = sum(loss_tracker) / len(loss_tracker)
@@ -258,25 +258,25 @@ for i in range(epoch, num_epochs):
 torch.save(model.state_dict(), f"./saved_models/{model_name}.ptm")
 
 
-def load_model(device: torch.device):
-    model = SAModel(
-        sequence_length=sequence_length,
-        categorical_embedding_dim=emb_dim,
-        num_attn_heads=num_attn_heads,
-        num_hidden=tfmr_num_hidden,
-        num_transformer_layers=num_dec_layers,
-        learning_rate=1e-3,
-        independent_categoricals=[type_, subtype, lvl, respgroup],
-        freeze_static_model_weights=True,
-        device=device,
-    )
+# def load_model(device: torch.device):
+#     model = SAModel(
+#         sequence_length=sequence_length,
+#         categorical_embedding_dim=emb_dim,
+#         num_attn_heads=num_attn_heads,
+#         num_hidden=tfmr_num_hidden,
+#         num_transformer_layers=num_dec_layers,
+#         learning_rate=1e-3,
+#         independent_categoricals=[type_, subtype, lvl, respgroup],
+#         freeze_static_model_weights=True,
+#         device=device,
+#     )
 
-    chkpnt = torch.load(
-        "./saved_models/chkpnt-SIAG4-EP93-TRNLOSS7dot716-2020-08-30_10-36-06.ptm",
-        map_location=device,
-    )
+#     chkpnt = torch.load(
+#         "./saved_models/chkpnt-SIAG4-EP93-TRNLOSS7dot716-2020-08-30_10-36-06.ptm",
+#         map_location=device,
+#     )
 
-    model.load_state_dict(chkpnt["model_state_dict"])
-    model.eval()
-    model.to(device)
-    return model
+#     model.load_state_dict(chkpnt["model_state_dict"])
+#     model.eval()
+#     model.to(device)
+#     return model
