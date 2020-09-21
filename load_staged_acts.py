@@ -78,7 +78,7 @@ def prep_feature_data(csv_path: str, feature_cols: List) -> pd.DataFrame:
 
 def get_dat_data(split_frac: float, feature_cols: List):
     """ get data from the csv, extract columns and split into test/train"""
-    cr_data = prep_feature_data("staged_activites.csv", feature_cols)
+    cr_data = prep_feature_data("staged_activities.csv", feature_cols)
 
     tst_data = cr_data[
         cr_data.CR_CD.isin(cr_data.sample(frac=1.0 - split_frac, random_state=1).CR_CD)
