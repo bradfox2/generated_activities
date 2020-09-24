@@ -1,4 +1,4 @@
-Predict unique but dependent categorical fields arranged as groups, issued in an sequence of arbitrary length.  Sequence and all elements therein is dependent on some static information provided once at start of sequence, similar to an image captioning problem.
+Predict unique but dependent categorical fields arranged as groups, issued in a sequence of arbitrary length.  Sequence and all elements therein are dependent on some static information provided once at start of sequence, similar to an image captioning problem.
 
  Example data is 4 batches of bptt 2, minibatch size 2,  3 categories
 ``` python

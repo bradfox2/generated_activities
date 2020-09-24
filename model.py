@@ -9,34 +9,9 @@ import torch
 import torch.nn as nn
 import transformers
 from torch.tensor import Tensor
-from torchtext.data.field import Field
 from transformers import DistilBertModel
 import math
-from utils import get_field_term_weights
-
-
-class IndependentCategorical(object):
-    def __init__(
-        self,
-        name: str,
-        num_levels: int,
-        padding_idx: int,
-        term_weights: List[Tensor],
-    ) -> None:
-        """ independent categorical used to create embedding and classification layers"""
-        self.name = name
-        self.num_levels = num_levels
-        self.padding_idx = padding_idx
-        self.term_weights: List = term_weights
-
-    @classmethod
-    def from_torchtext_field(
-        cls, name: str, field: Field, total_num_samples: int, padding_token="<pad>"
-    ):
-        num_levels: int = len(field.vocab.itos)
-        padding_idx: int = field.vocab.stoi[padding_token]  # type: ignore
-        term_weights: Tensor = get_field_term_weights(field, total_num_samples)  # type: ignore
-        return IndependentCategorical(name, num_levels, padding_idx, term_weights)
+from data_processing import IndependentCategorical
 
 
 class SAModelConfig(object):
@@ -166,7 +141,7 @@ class SAModel(nn.Module):
         )
         self.static_data_layer_norm = nn.LayerNorm(self.transformer_dim_sz)
 
-        self.optimizer = torch.optim.AdamW(self.parameters(), self.learning_rate)
+        self.optimizer = torch.optim.AdamW(self.parameters(), self.learning_rate)  # type: ignore
 
         assert self._pad_tokens_identical()
         self.tgt_pad_idx = self.independent_categoricals[0].padding_idx
@@ -188,7 +163,7 @@ class SAModel(nn.Module):
         " generates an instance of a loss criterion for each independent categorical"
         self.loss_criteria = [
             nn.CrossEntropyLoss(
-                ignore_index=ind_cat.padding_idx, weight=ind_cat.term_weights
+                ignore_index=ind_cat.padding_idx, weight=ind_cat.term_weights  # type: ignore
             ).to(self.device)
             for ind_cat in self.independent_categoricals
         ]

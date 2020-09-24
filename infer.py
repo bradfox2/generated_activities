@@ -42,10 +42,12 @@ static_tokenizer = DistilBertTokenizer.from_pretrained(
     "distilbert-base-uncased", return_tensors="pt"
 )
 
-type_ = IndependentCategorical.from_torchtext_field("type_", TYPE, 1)
-subtype = IndependentCategorical.from_torchtext_field("subtype", SUBTYPE, 1)
-lvl = IndependentCategorical.from_torchtext_field("lvl", LVL, 1)
-respgroup = IndependentCategorical.from_torchtext_field("respgroup", RESPGROUP, 1)
+type_ = IndependentCategorical.from_torchtext_field_wrapper("type_", TYPE, 1)
+subtype = IndependentCategorical.from_torchtext_field_wrapper("subtype", SUBTYPE, 1)
+lvl = IndependentCategorical.from_torchtext_field_wrapper("lvl", LVL, 1)
+respgroup = IndependentCategorical.from_torchtext_field_wrapper(
+    "respgroup", RESPGROUP, 1
+)
 
 model = SAModel(
     sequence_length,
@@ -64,7 +66,10 @@ model = SAModel(
     device=torch.device("cpu"),
 )
 
-model_state_dict = torch.load(f"./saved_models/{model_name}.ptm", map_location="cpu",)
+model_state_dict = torch.load(
+    f"./saved_models/{model_name}.ptm",
+    map_location="cpu",
+)
 model.load_state_dict(model_state_dict)
 
 from data.get_data import get_cr_feature_data
@@ -104,5 +109,5 @@ def predict(cr_cd, cap_class, resp_group):
             )
             print(feature_data)
 
-predict("20-11517", "N", "8516")
 
+predict("20-11517", "N", "8516")

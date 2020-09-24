@@ -22,52 +22,18 @@ feature_cols = {
     "LI_FAIL_CD": str,
     "CAP_CLASS": str,
     "RESPONSIBLE_GROUP": str,
+    "TITLE": str,
+    "LI_SYS_ID": str,
+    "LI_NAME": str,
+    "PLNT_UNIT": str,
+    "LI_EQUIP_COMP_CD": str,
+    "LI_EQUIP": str,
+    "IDENT_PER_ORG_UNIT": str,
     "DESCR": str,
     "LEADER_COMMENT": str,
+    "ACTION_TAKEN_TEXT": str,
+    "SUG_DISP": str,
 }
-
-
-def textify_feature_data(cr_data, feature_cols):
-    return StagedActsDataset.textify_feature_data(cr_data, feature_cols)
-
-
-def prep_feature_data(csv_path: str, feature_cols: List) -> pd.DataFrame:
-    """get data from csv and textify it"""
-    cr_data = StagedActsDataset.get_data(csv_path)
-    cr_data = cr_data.sample(frac=1, random_state=1)
-    return textify_feature_data(cr_data, feature_cols)
-
-
-def get_dat_data(file: str, split_frac: float, feature_cols: List):
-    """ get data from the csv, extract columns and split into test/train"""
-    cr_data = prep_feature_data(file, feature_cols)
-    cr_data = textify_feature_data(cr_data, feature_cols)
-
-    tst_data = cr_data[
-        cr_data.CR_CD.isin(cr_data.sample(frac=1.0 - split_frac, random_state=1).CR_CD)
-    ]
-
-    assert len(tst_data) > 1, "Need tst data."
-    trn_data = cr_data[~cr_data.CR_CD.isin(tst_data.CR_CD)]
-
-    assert len(trn_data) > 1, "Need training data."
-
-    trn_act_seqs = create_act_seqs(trn_data, StagedActsDataset.staged_activity_fields)
-
-    trn_static_data = trn_data[["CR_CD", "TEXT"]].drop_duplicates().set_index("CR_CD")
-
-    trn_static_data = trn_static_data[trn_static_data.index.isin(trn_act_seqs.index)]
-
-    trn_static_data = trn_static_data.reindex(trn_act_seqs.index)
-
-    assert len(trn_static_data) == len(trn_act_seqs)
-
-    tst_act_seqs = create_act_seqs(tst_data, StagedActsDataset.staged_activity_fields)
-    tst_static_data = tst_data[["CR_CD", "TEXT"]].drop_duplicates().set_index("CR_CD")
-    tst_static_data = tst_static_data[tst_static_data.index.isin(tst_act_seqs.index)]
-    tst_static_data = tst_static_data.reindex(tst_act_seqs.index)
-
-    return trn_act_seqs, tst_act_seqs, trn_static_data, tst_static_data
 
 
 class StagedActsDataset(Dataset):

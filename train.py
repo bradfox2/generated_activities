@@ -15,21 +15,20 @@ from data_processing import (
     TYPE,
     batchify_act_seqs,
     batchify_static_data,
-    process,
+    IndependentCategorical,
 )
 from load_staged_acts import (
-    get_dat_data,
     feature_cols,
     StagedActsDataset,
     Textify,
     StagedActsDatasetProcessor,
 )
-from model import IndependentCategorical, SAModel
+from model import SAModel
 from utils import field_accuracy, field_printer, set_seed
 
 set_seed(0)
 
-load_chkpnt = False
+load_chkpnt = True
 
 model_name = "SIAG4"  # Seq_Ind_Acts_Generation
 
@@ -87,25 +86,6 @@ bptt = (
 )  # back prop through time or sequence length, how long the sequence is that we are working with
 num_epochs = 250
 
-# tokenize, truncate, pad
-# (
-#     numer_trn_act_seqs,
-#     numer_tst_act_seqs,
-#     numer_trn_static_data,
-#     numer_tst_static_data,
-# ) = process(trnseq, trnstat, tstseq, tststat, sequence_length + 1)
-
-# # check to ensure data is good
-# assert (
-#     len(sa[:][~trnseq.index.isin(numer_trn_act_seqs.index)]) == 0
-# ), "Records are being dropped during processing"
-# assert trnseq.index.identical(
-#     numer_trn_act_seqs.index
-# ), "Mismatch between seq tokenized data and seq numericalized data."
-# assert numer_trn_static_data.index.identical(
-#     numer_trn_act_seqs.index
-# ), "Mismatch between static data and seq data."
-
 seq_data_trn = batchify_act_seqs(numer_trn_act_seqs, batch_sz).contiguous().to(device)
 seq_data_tst = batchify_act_seqs(numer_tst_act_seqs, batch_sz).contiguous().to(device)
 
@@ -159,12 +139,14 @@ def validate(eval_model, seq_data, static_data) -> Tuple[float, float]:
 
 fields = [TYPE, SUBTYPE, LVL, RESPGROUP]
 total_trn_samples = len(trn_sadp)
-type_ = IndependentCategorical.from_torchtext_field("type_", TYPE, total_trn_samples)
-subtype = IndependentCategorical.from_torchtext_field(
+type_ = IndependentCategorical.from_torchtext_field_wrapper(
+    "type_", TYPE, total_trn_samples
+)
+subtype = IndependentCategorical.from_torchtext_field_wrapper(
     "subtype", SUBTYPE, total_trn_samples
 )
-lvl = IndependentCategorical.from_torchtext_field("lvl", LVL, total_trn_samples)
-respgroup = IndependentCategorical.from_torchtext_field(
+lvl = IndependentCategorical.from_torchtext_field_wrapper("lvl", LVL, total_trn_samples)
+respgroup = IndependentCategorical.from_torchtext_field_wrapper(
     "respgroup", RESPGROUP, total_trn_samples
 )
 
@@ -190,7 +172,7 @@ static_tokenizer = DistilBertTokenizer.from_pretrained(
 
 if load_chkpnt:  # continue training
     model_path = (
-        "./saved_models/chkpnt-SIAG4-EP65-TRNLOSS0dot096-2020-08-29_14-01-27.ptm"
+        "./saved_models/chkpnt-SIAG4-EP21-TRNLOSS1dot186-2020-09-21_16-41-10.ptm"
     )
     logger.info(f"Loading model from {model_path}")
     model.to(device)  # move model before loading optimizer
