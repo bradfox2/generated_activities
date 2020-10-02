@@ -67,7 +67,7 @@ model = SAModel(
 model_state_dict = torch.load(f"./saved_models/{model_name}.ptm", map_location="cpu",)
 model.load_state_dict(model_state_dict)
 
-from data.get_data import get_cr_feature_data
+from data.get_data import get_cr_feature_data, get_org_display_lkp
 
 
 def predict(cr_cd, cap_class, resp_group):
@@ -101,8 +101,10 @@ def predict(cr_cd, cap_class, resp_group):
                 SUBTYPE.vocab.itos[st],
                 LVL.vocab.itos[l],
                 RESPGROUP.vocab.itos[rg],
+                get_org_display_lkp(RESPGROUP.vocab.itos[rg]),
             )
-            print(feature_data)
+    print(feature_data)
 
-predict("20-11517", "N", "8516")
+
+predict("20-11775", "N", "9725")
 
