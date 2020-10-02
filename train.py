@@ -23,37 +23,28 @@ import sys
 set_seed(0)
 
 model_name = "SIAG4"  # Seq_Ind_Acts_Generation
+loaload_chkpnt = True
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
-# create file handler which logs even debug messages
 fh = logging.FileHandler(f"{model_name}_training.log")
 fh.setLevel(logging.DEBUG)
-# create console handler with a higher log level
-# ch = logging.StreamHandler()
-# ch.setLevel(logging.DEBUG)
-# create formatter and add it to the handlers
 formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 fh.setFormatter(formatter)
-# ch.setFormatter(formatter)
-# add the handlers to the train_logger
 logger.addHandler(fh)
-# logger.addHandler(ch)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 trnseq, tstseq, trnstat, tststat = get_dat_data(split_frac=0.8)
 
-# tokenize, truncate, pad
-# TODO: this function call has side-effects, on TYPE, SUBTYPE, LVL, RESPGROUP objects
-sequence_length = (
-    5  # maximum number of independent category groups that make up a sequence
-)
-num_act_cats = 4  # number of independent fields in a category group
-batch_sz = (
-    4  # minibatch size, sequences of independent cat groups to be processed in parallel
-)
+# maximum number of independent category groups that make up a sequence
+sequence_length = 5
+# number of independent fields in a category group
+num_act_cats = 4
+# minibatch size, sequences of independent cat groups to be processed in parallel
+batch_sz = 4
+
 rec_len = len(trnseq) // batch_sz  # num records in training set, used for batchifying
 emb_dim = 192  # embedding dim for each categorical
 embedding_dim_into_tran = (
@@ -114,9 +105,11 @@ def gen_inp_data_set(seq_data: torch.Tensor, static_data: np.array):
         target = seq_data[i, 1:]
         yield inp, target, static_data[i]
 
+
 from typing import Tuple
 
-def validate(eval_model, seq_data, static_data) -> Tuple[float,float]:
+
+def validate(eval_model, seq_data, static_data) -> Tuple[float, float]:
     eval_model.eval()
     with torch.no_grad():
         val_loss = 0.0
@@ -144,7 +137,17 @@ def validate(eval_model, seq_data, static_data) -> Tuple[float,float]:
                 for idx, field in enumerate(fields)
             ]
         )
-        return (val_loss.item() / len(seq_data), sum(avg_val_acc)/len(avg_val_acc))
+        return (val_loss.item() / len(seq_data), sum(avg_val_acc) / len(avg_val_acc))
+
+
+if load_chkpnt:
+    model_path = "./saved_models/chkpnt-SIAG3.ptm"
+    logger.info(f"Loading model from {model_path}")
+    model.to(device)  # move model before loading optimizer
+    checkpoint = torch.load(model_path)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    epoch = checkpoint["epoch"]
 
 model_conf = SAModelConfig(
     model_name=model_name,
@@ -154,8 +157,9 @@ model_conf = SAModelConfig(
     freeze_static_model_weights=True,
     categorical_embedding_dim=32,
     num_attn_heads=4,
-    num_transformer_layers=2)
-    
+    num_transformer_layers=2,
+)
+
 fields = [TYPE, SUBTYPE, LVL, RESPGROUP]
 total_trn_samples = len(trnseq)
 type_ = IndependentCategorical.from_torchtext_field("type_", TYPE, total_trn_samples)
