@@ -1,13 +1,11 @@
 """example code of how we might tokenize individual categorial variables"""
 
-import pandas
 import torchtext
-from pandas import Series
 import torch
 import numpy as np
 from utils import set_seed
 import logging
-from torchtext.data import Field
+from utils import get_field_term_weights
 
 set_seed(0)
 logger = logging.getLogger(__name__)
@@ -29,13 +27,13 @@ class IndependentCategorical(TTFieldWrapper):
         name: str,
         num_levels: int,
         padding_idx: int,
-        term_weights: List[Tensor],
+        term_weights: Tensor,
         min_frequency: int,
         *args,
         **kwargs
     ) -> None:
         """ independent categorical used to create embedding and classification layers"""
-        super().__init__(*args, **kwargs)
+        super().__init__(min_frequency, *args, **kwargs)
         self.name = name
         self.num_levels = num_levels
         self.padding_idx = padding_idx

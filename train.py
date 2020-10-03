@@ -7,6 +7,18 @@ from typing import Tuple
 import numpy as np
 import torch
 from transformers import DistilBertTokenizer
+import argparse
+
+parser = argparse.ArgumentParser()
+group = parser.add_mutually_exclusive_group()
+group.add_argument("--chkpnt_file", help="Pytorch Checkpoint file.")
+group.add_argument("--model_name", help="New model name.")
+parser.add_argument("--seq_length", help="Categorical group sequence length.")
+parser.add_argument("--batch_size", help="Mini batch size", type=int)
+args = parser.parse_args()
+chkpnt_file = args.chkpnt_file
+model_name = args.model_name
+batch_sz = args.batch_size
 
 from data_processing import (
     LVL,
@@ -28,9 +40,7 @@ from utils import field_accuracy, field_printer, set_seed
 
 set_seed(0)
 
-load_chkpnt = True
-
-model_name = "SIAG4"  # Seq_Ind_Acts_Generation
+model_name = model_name  # Seq_Ind_Acts_Generation
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -72,7 +82,9 @@ numer_tst_static_data = tst_sadp["TEXT"]
 
 
 num_act_cats = 4  # number of independent fields in a category group
-batch_sz = 12  # minibatch size, sequences of independent cat groups to be processed in parallel
+batch_sz = (
+    batch_sz if batch_sz else 12
+)  # minibatch size, sequences of independent cat groups to be processed in parallel
 rec_len = len(trn_sadp) // batch_sz  # num records in training set, used for batchifying
 emb_dim = 192  # embedding dim for each categorical
 embedding_dim_into_tran = (
@@ -170,10 +182,8 @@ static_tokenizer = DistilBertTokenizer.from_pretrained(
     vocab_file="./distilbert_weights/vocab.txt",
 )
 
-if load_chkpnt:  # continue training
-    model_path = (
-        "./saved_models/chkpnt-SIAG4-EP21-TRNLOSS1dot186-2020-09-21_16-41-10.ptm"
-    )
+if chkpnt_file:  # continue training
+    model_path = chkpnt_file
     logger.info(f"Loading model from {model_path}")
     model.to(device)  # move model before loading optimizer
     checkpoint = torch.load(model_path)
@@ -202,7 +212,7 @@ for i in range(epoch, num_epochs):
         static_data = static_tokenizer(
             static_data_txt.tolist(), padding=True, truncation=True, return_tensors="pt"
         ).to(device)
-        batch_loss = model.learn(data.to(device), static_data, tgt.to(device))
+        batch_loss = model.learn(data.to(device), static_data, tgt.to(device)) # type: ignore
         epoch_loss += batch_loss
         counter += 1
         if counter % log_interval == 0:

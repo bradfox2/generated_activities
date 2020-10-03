@@ -16,14 +16,14 @@ def field_printer(field: Field, prob_tensor: Tensor, tgt: Tensor):
     return list(
         zip(
             [
-                field.vocab.itos[i]
+                field.vocab.itos[i]  # type: ignore
                 for i in prob_tensor.argmax(dim=-1).flatten()
-                if field.vocab.itos[i] != "<pad>"
+                if field.vocab.itos[i] != "<pad>"  # type: ignore
             ],
             [
-                field.vocab.itos[i]
+                field.vocab.itos[i]  # type: ignore
                 for i in tgt.flatten()
-                if field.vocab.itos[i] != "<pad>"
+                if field.vocab.itos[i] != "<pad>"  # type: ignore
             ],
         )
     )
@@ -36,14 +36,14 @@ def field_accuracy(
         1 if i == j else 0
         for i, j in zip(
             [
-                field.vocab.itos[i]
+                field.vocab.itos[i]  # type: ignore
                 for i in prob_tensor.argmax(dim=-1).flatten()
-                if field.vocab.itos[i] != "<pad>"
+                if field.vocab.itos[i] != "<pad>"  # type: ignore
             ],
             [
-                field.vocab.itos[i]
+                field.vocab.itos[i]  # type: ignore
                 for i in tgt.flatten()
-                if field.vocab.itos[i] != "<pad>"
+                if field.vocab.itos[i] != "<pad>"  # type: ignore
             ],
         )
     ]
@@ -57,16 +57,16 @@ def get_field_term_weights(
     """ Gets normalized class weights from a torchtext.field object sufficient for passing into cross entropy loss criterion."""
     # n_samples / (n_classes * bincount) from scikit learn balanced classes
     inverse_proportion_of_term = {
-        class_name: total_num_samples / (len(field.vocab.stoi) * total_counts)
-        for class_name, total_counts in field.vocab.freqs.items()
+        class_name: total_num_samples / (len(field.vocab.stoi) * total_counts)  # type: ignore
+        for class_name, total_counts in field.vocab.freqs.items()  # type: ignore
     }
 
     weights = torch.tensor(
         [
             inverse_proportion_of_term[i] if i in inverse_proportion_of_term.keys()
             # else 1.0
-            else total_num_samples / (len(field.vocab.stoi) * total_num_samples)
-            for i in field.vocab.itos
+            else total_num_samples / (len(field.vocab.stoi) * total_num_samples)  # type: ignore
+            for i in field.vocab.itos  # type: ignore
         ]
     )
     logger.debug(f"Field:{field}, weights: {weights}")
@@ -76,6 +76,6 @@ def get_field_term_weights(
 
 def set_seed(seed):
     random.seed(seed)
-    np.random.seed(seed)
+    np.random.seed(seed)  # type: ignore
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)

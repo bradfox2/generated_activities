@@ -14,10 +14,6 @@ import math
 from data_processing import IndependentCategorical
 
 
-class SAModelConfig(object):
-    pass
-
-
 class ActClassifierHead(nn.Module):
     def __init__(self, n_embd, p_drop, n_classes) -> None:
         super(ActClassifierHead, self).__init__()
@@ -106,10 +102,7 @@ class SAModel(nn.Module):
         self.grad_norm_clip = grad_norm_clip
         self.mask = None
         self.transformer_decoder_layer = nn.TransformerDecoderLayer(
-            self.transformer_dim_sz,
-            self.num_attn_heads,
-            self.num_hidden,
-            self.dropout,
+            self.transformer_dim_sz, self.num_attn_heads, self.num_hidden, self.dropout,
         )
         self.transformer_decoder = nn.TransformerDecoder(
             self.transformer_decoder_layer, self.num_transformer_layers
@@ -132,7 +125,7 @@ class SAModel(nn.Module):
                 raise (e)
 
         if freeze_static_model_weights:
-            for param in self.static_data_model.parameters():
+            for param in self.static_data_model.parameters():  # type: ignore
                 param.requires_grad = False
 
         self.static_data_embedding_size = static_data_embedding_size
@@ -145,10 +138,8 @@ class SAModel(nn.Module):
 
         assert self._pad_tokens_identical()
         self.tgt_pad_idx = self.independent_categoricals[0].padding_idx
-        self.scheduler = (
-            transformers.get_cosine_with_hard_restarts_schedule_with_warmup(
-                self.optimizer, self.warmup_steps, self.total_steps, 6
-            )
+        self.scheduler = transformers.get_cosine_with_hard_restarts_schedule_with_warmup(
+            self.optimizer, self.warmup_steps, self.total_steps, 6
         )
 
     def _pad_tokens_identical(self):
@@ -210,11 +201,11 @@ class SAModel(nn.Module):
     def _init_weights(self):
         " Initialize weights appropriate for transformer for each linear and embedding layer."
         for layer in self.cat_embeddings:
-            layer.weight.data.uniform_(-self.weight_initrange, self.weight_initrange)
+            layer.weight.data.uniform_(-self.weight_initrange, self.weight_initrange)  # type: ignore
 
         for layer in self.cat_linear_classifiers:
-            layer.weight.data.uniform_(-self.weight_initrange, self.weight_initrange)
-            layer.bias.data.zero_()
+            layer.weight.data.uniform_(-self.weight_initrange, self.weight_initrange)  # type: ignore
+            layer.bias.data.zero_()  # type: ignore
 
     def _generate_square_target_mask(self, seq_len):
         """Generates a top right triangle square mask of the target sequence.
@@ -236,7 +227,7 @@ class SAModel(nn.Module):
 
         # combine all DB word vectors emitted into a single timestep feature vector
         static_data_embedding = (
-            self.static_data_model(**static_data)[0].mean(1).unsqueeze(0)
+            self.static_data_model(**static_data)[0].mean(1).unsqueeze(0)  # type: ignore
         )
 
         # ensure batch size of static data same as seqential data
@@ -257,7 +248,7 @@ class SAModel(nn.Module):
         # cats_combined_embedding = self.pos_encoder(cats_combined_embedding)
 
         tgt_key_pad_mask = data == self.tgt_pad_idx
-        tgt_key_pad_mask = tgt_key_pad_mask.permute(1, 0, 2)[
+        tgt_key_pad_mask = tgt_key_pad_mask.permute(1, 0, 2)[ # type: ignore
             :, :, 0
         ]  # (target sequence length x batch size)
 

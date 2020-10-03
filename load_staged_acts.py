@@ -53,7 +53,7 @@ class StagedActsDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx) -> Any:
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
@@ -150,11 +150,11 @@ class StagedActsDatasetProcessor:
         dataset: StagedActsDataset,
         fields: List[TTFieldWrapper],
         max_len: int,
-        train=False,
+        train: bool = False,
         shuffle=True,
         split=0.8,
     ):
-        self.dataset = dataset
+        self.dataset: StagedActsDataset = dataset
         self.fields = fields
         self.split = split
         self.shuffle = shuffle
@@ -169,9 +169,12 @@ class StagedActsDatasetProcessor:
             if self.train
             else self.dataset[self.num_train_recs :]
         )
+
         self.seq_data = self.process_seq_data(
             self.unprocessed_data["field_sequence"], train_fields=self.train
-        ).rename("field_sequence_num")
+        ).rename(
+            "field_sequence_num"
+        )  # type: ignore
         self.data = self.seq_data.to_frame().merge(
             self.unprocessed_data, left_index=True, right_index=True
         )
@@ -182,7 +185,7 @@ class StagedActsDatasetProcessor:
     def __len__(self):
         return len(self.data)
 
-    def process_seq_data(self, field_sequence: pd.Series, train_fields):
+    def process_seq_data(self, field_sequence: pd.Series[Any], train_fields):
         if train_fields:
             self._train_fields(field_sequence=field_sequence)
         act_seqs = field_sequence.apply(lambda x: x[: self.max_len - 2])
@@ -247,54 +250,54 @@ class StagedActsDatasetProcessor:
 
 if __name__ == "__main__":
     pass
-    sa = StagedActsDataset("staged_activities.csv", [Textify(feature_cols)])
+    # sa = StagedActsDataset("staged_activities.csv", [Textify(feature_cols)])
 
-    trn, tst = torch.utils.data.random_split(sa, [l := int(len(sa) * 0.8), len(sa) - l])  # type: ignore
+    # trn, tst = torch.utils.data.random_split(sa, [l := int(len(sa) * 0.8), len(sa) - l])  # type: ignore
 
-    eos_token = "<eos>"
-    init_token = "<sos>"
-    pad_token = "<pad>"
+    # eos_token = "<eos>"
+    # init_token = "<sos>"
+    # pad_token = "<pad>"
 
-    TYPE = TTFieldWrapper(
-        sequential=False,
-        unk_token="<unk>",
-        lower=True,
-        eos_token=eos_token,
-        init_token=init_token,
-        pad_token=pad_token,
-        min_frequency=100,
-    )
+    # TYPE = TTFieldWrapper(
+    #     sequential=False,
+    #     unk_token="<unk>",
+    #     lower=True,
+    #     eos_token=eos_token,
+    #     init_token=init_token,
+    #     pad_token=pad_token,
+    #     min_frequency=100,
+    # )
 
-    SUBTYPE = TTFieldWrapper(
-        sequential=False,
-        unk_token="<unk>",
-        lower=True,
-        eos_token=eos_token,
-        init_token=init_token,
-        pad_token=pad_token,
-        min_frequency=15,
-    )
+    # SUBTYPE = TTFieldWrapper(
+    #     sequential=False,
+    #     unk_token="<unk>",
+    #     lower=True,
+    #     eos_token=eos_token,
+    #     init_token=init_token,
+    #     pad_token=pad_token,
+    #     min_frequency=15,
+    # )
 
-    LVL = TTFieldWrapper(
-        sequential=False,
-        unk_token="<unk>",
-        lower=True,
-        eos_token=eos_token,
-        init_token=init_token,
-        pad_token=pad_token,
-        min_frequency=50,
-    )
+    # LVL = TTFieldWrapper(
+    #     sequential=False,
+    #     unk_token="<unk>",
+    #     lower=True,
+    #     eos_token=eos_token,
+    #     init_token=init_token,
+    #     pad_token=pad_token,
+    #     min_frequency=50,
+    # )
 
-    RESPGROUP = TTFieldWrapper(
-        min_frequency=7,
-        sequential=False,
-        unk_token="<unk>",
-        lower=True,
-        eos_token=eos_token,
-        init_token=init_token,
-        pad_token=pad_token,
-    )
+    # RESPGROUP = TTFieldWrapper(
+    #     min_frequency=7,
+    #     sequential=False,
+    #     unk_token="<unk>",
+    #     lower=True,
+    #     eos_token=eos_token,
+    #     init_token=init_token,
+    #     pad_token=pad_token,
+    # )
 
-    a = StagedActsDatasetProcessor(
-        sa, [TYPE, SUBTYPE, LVL, RESPGROUP], max_len=6, train=True, shuffle=True
-    )
+    # a = StagedActsDatasetProcessor(
+    #     sa, [TYPE, SUBTYPE, LVL, RESPGROUP], max_len=6, train=True, shuffle=True
+    # )

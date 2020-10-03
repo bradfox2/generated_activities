@@ -10,8 +10,9 @@ from data_processing import (
     RESPGROUP,
     SUBTYPE,
     TYPE,
-    numericalize,
 )
+
+from load_staged_acts import StagedActsDatasetProcessor
 
 # model parameters from trainig script or as args
 sequence_length = (
@@ -66,13 +67,10 @@ model = SAModel(
     device=torch.device("cpu"),
 )
 
-model_state_dict = torch.load(
-    f"./saved_models/{model_name}.ptm",
-    map_location="cpu",
-)
+model_state_dict = torch.load(f"./saved_models/{model_name}.ptm", map_location="cpu",)
 model.load_state_dict(model_state_dict)
 
-from data.get_data import get_cr_feature_data
+from data.get_data import get_cr_feature_data  # type: ignore
 
 
 def predict(cr_cd, cap_class, resp_group):
@@ -84,7 +82,7 @@ def predict(cr_cd, cap_class, resp_group):
     )
 
     seq_data = pandas.Series([[["<sos>"] * 4]]).apply(
-        numericalize, args=[TYPE, SUBTYPE, LVL, RESPGROUP]
+        StagedActsDatasetProcessor.numericalize, args=(TYPE, SUBTYPE, LVL, RESPGROUP)
     )
     seq_data = torch.tensor(seq_data)
 
