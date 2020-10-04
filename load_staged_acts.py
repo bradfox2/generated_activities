@@ -306,4 +306,3 @@ if __name__ == "__main__":
     sadp.process_dataset_to_tokens(tr, True, "field_sequence")
     sadp.process_dataset_to_tokens(ts, False, "field_sequence")
     sadp.process_dataset_to_tokens(v, False, "field_sequence")
-    print(v.data)
