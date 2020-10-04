@@ -1,6 +1,6 @@
 """loads long dataset of staged acts with the cr details, and makes staged act sequences grouped by crs"""
 
-from typing import Any, List
+from typing import Any, Callable, List, Union
 
 import numpy as np
 import pandas as pd
@@ -14,6 +14,7 @@ set_seed(0)
 
 
 def create_act_seqs(df, seq_field_names, group_column_name="CR_CD"):
+    """ legacy until refactor of training """
     return StagedActsDataset.create_act_seqs(df)
 
 
@@ -34,9 +35,13 @@ feature_cols = {
     "ACTION_TAKEN_TEXT": str,
     "SUG_DISP": str,
 }
+from typing import TypeVar
+
+SADS = TypeVar("SADS", bound="StagedActsDataset")
 
 
 class StagedActsDataset(Dataset):
+    """ Base dataset for a staged activity (groups of categorical sequences) model """
 
     staged_activity_fields = {
         "SA_WRK_TYPE": object,
@@ -45,9 +50,9 @@ class StagedActsDataset(Dataset):
         "SA_WRK_RESP_ORG_UNIT": object,
     }
 
-    def __init__(self, csv_path, transform=None):
-        self.raw_data = self.get_data(csv_path)
-        self.data = self._process_raw_data()
+    def __init__(self, raw_data: pd.DataFrame, transform=None):
+        self.raw_data = raw_data
+        self.data = self.build_sequences()
         self.transform = transform
 
     def __len__(self):
@@ -65,14 +70,19 @@ class StagedActsDataset(Dataset):
 
         return sample
 
-    def _process_raw_data(self):
+    def build_sequences(self):
+        """ aggregates the long form sequential records, and then creates a list of the sequential categories """
+
         data = self.raw_data.copy(deep=True).drop_duplicates().reset_index()
         feats = data.groupby("CR_CD").first()
-        return pd.concat([self.create_act_seqs(data), feats], axis=1)
+        d = pd.concat([self.create_act_seqs(data), feats], axis=1)
+        self.data = d
+        return self.data
 
     @classmethod
-    def get_data(cls, csv_path) -> pd.DataFrame:
-        return pd.read_csv(  # type: ignore
+    def from_csv(cls, csv_path, transform: List[Callable]) -> SADS:
+        """ Creates a Staged Activity raw dataset from a CSV File path, applies functions defined in transoforms"""
+        raw_data: pd.DataFrame = pd.read_csv(  # type: ignore
             csv_path,
             dtype=dict(cls.staged_activity_fields, **feature_cols),
             parse_dates=True,
@@ -104,13 +114,7 @@ class StagedActsDataset(Dataset):
             ],
             keep_default_na=False,
         )
-
-    @classmethod
-    def textify_feature_data(cls, cr_data, feature_cols):
-        cr_data["TEXT"] = ""
-        for col in feature_cols:
-            cr_data["TEXT"] += f" [{col}] " + cr_data.get(col, "[SEP]").astype(str)
-        return cr_data
+        return StagedActsDataset(raw_data, transform)
 
     @classmethod
     def create_act_seqs(cls, df):
@@ -118,6 +122,16 @@ class StagedActsDataset(Dataset):
         df["field_sequence"] = df[cls.staged_activity_fields].values.tolist()
         act_seqs = df.groupby("CR_CD")["field_sequence"].apply(list)
         return act_seqs
+
+    def splits(self, trn=0.75, tst=0.15, val=0.10):
+        trn_idx = int(len(self.raw_data) * trn)
+        tst_idx = int(len(self.raw_data) * (trn + tst))
+        trn_data = self.raw_data[:trn_idx]
+        tst_data = self.raw_data[trn_idx:tst_idx]
+        val_data = self.raw_data[tst_idx:]
+        return [
+            StagedActsDataset(d, self.transform) for d in [trn_data, tst_data, val_data]
+        ]
 
 
 class Textify(object):
@@ -147,45 +161,35 @@ class StagedActsDatasetProcessor:
 
     def __init__(
         self,
-        dataset: StagedActsDataset,
         fields: List[TTFieldWrapper],
         max_len: int,
-        train: bool = False,
-        shuffle=True,
-        split=0.8,
     ):
-        self.dataset: StagedActsDataset = dataset
         self.fields = fields
-        self.split = split
-        self.shuffle = shuffle
-        self.train = train
-        self.num_train_recs = int(len(self.dataset) * split)
         self.max_len = max_len
         self.eos_token = "<eos>"
         self.init_token = "<sos>"
         self.pad_token = "<pad>"
-        self.unprocessed_data = (
-            self.dataset[: self.num_train_recs]
-            if self.train
-            else self.dataset[self.num_train_recs :]
+
+    def process_dataset_to_tokens(
+        self, dataset: StagedActsDataset, train_fields: bool, sequence_col_name: str
+    ) -> StagedActsDataset:
+        """transforms the categorical values in the sequence column of a staged act dataset into numericals suitable for embedding
+        train_fields indicated whether to train fields associated with parent processor object"""
+
+        processed_col_name = sequence_col_name + "_num"
+        numrcl_seq = self.process_series_to_tokens(
+            dataset.data[sequence_col_name], train_fields
         )
-
-        self.seq_data = self.process_seq_data(
-            self.unprocessed_data["field_sequence"], train_fields=self.train
-        ).rename(
-            "field_sequence_num"
-        )  # type: ignore
-        self.data = self.seq_data.to_frame().merge(
-            self.unprocessed_data, left_index=True, right_index=True
+        numrcl_seq.rename(processed_col_name, inplace=True)  # type: ignore
+        numrcl_frame = numrcl_seq.to_frame().merge(
+            dataset.data, left_index=True, right_index=True
         )
+        dataset.data = numrcl_frame
+        return dataset
 
-    def __getitem__(self, index):
-        return self.data[index]
-
-    def __len__(self):
-        return len(self.data)
-
-    def process_seq_data(self, field_sequence: pd.Series[Any], train_fields):
+    def process_series_to_tokens(
+        self, field_sequence: pd.Series, train_fields: bool
+    ) -> Union[pd.Series, pd.DataFrame]:
         if train_fields:
             self._train_fields(field_sequence=field_sequence)
         act_seqs = field_sequence.apply(lambda x: x[: self.max_len - 2])
@@ -213,9 +217,6 @@ class StagedActsDatasetProcessor:
                 specials=["<pad>"],
                 min_freq=field.min_frequency,
             )
-
-    def __len__(self):
-        return len(self.dataset)
 
     @staticmethod
     def numericalize(act_seq, fields: List[TTFieldWrapper]):
@@ -248,56 +249,61 @@ class StagedActsDatasetProcessor:
             return StagedActsDatasetProcessor.numericalize(act_seq, fields)
 
 
-if __name__ == "__main__":
+class StagedActsTrn(StagedActsDataset):
     pass
-    # sa = StagedActsDataset("staged_activities.csv", [Textify(feature_cols)])
 
-    # trn, tst = torch.utils.data.random_split(sa, [l := int(len(sa) * 0.8), len(sa) - l])  # type: ignore
 
-    # eos_token = "<eos>"
-    # init_token = "<sos>"
-    # pad_token = "<pad>"
+if __name__ == "__main__":
+    # pass
+    sa = StagedActsDataset.from_csv("staged_activities.csv", [Textify(feature_cols)])
+    tr, ts, v = sa.splits()
 
-    # TYPE = TTFieldWrapper(
-    #     sequential=False,
-    #     unk_token="<unk>",
-    #     lower=True,
-    #     eos_token=eos_token,
-    #     init_token=init_token,
-    #     pad_token=pad_token,
-    #     min_frequency=100,
-    # )
+    eos_token = "<eos>"
+    init_token = "<sos>"
+    pad_token = "<pad>"
 
-    # SUBTYPE = TTFieldWrapper(
-    #     sequential=False,
-    #     unk_token="<unk>",
-    #     lower=True,
-    #     eos_token=eos_token,
-    #     init_token=init_token,
-    #     pad_token=pad_token,
-    #     min_frequency=15,
-    # )
+    TYPE = TTFieldWrapper(
+        sequential=False,
+        unk_token="<unk>",
+        lower=True,
+        eos_token=eos_token,
+        init_token=init_token,
+        pad_token=pad_token,
+        min_frequency=100,
+    )
 
-    # LVL = TTFieldWrapper(
-    #     sequential=False,
-    #     unk_token="<unk>",
-    #     lower=True,
-    #     eos_token=eos_token,
-    #     init_token=init_token,
-    #     pad_token=pad_token,
-    #     min_frequency=50,
-    # )
+    SUBTYPE = TTFieldWrapper(
+        sequential=False,
+        unk_token="<unk>",
+        lower=True,
+        eos_token=eos_token,
+        init_token=init_token,
+        pad_token=pad_token,
+        min_frequency=15,
+    )
 
-    # RESPGROUP = TTFieldWrapper(
-    #     min_frequency=7,
-    #     sequential=False,
-    #     unk_token="<unk>",
-    #     lower=True,
-    #     eos_token=eos_token,
-    #     init_token=init_token,
-    #     pad_token=pad_token,
-    # )
+    LVL = TTFieldWrapper(
+        sequential=False,
+        unk_token="<unk>",
+        lower=True,
+        eos_token=eos_token,
+        init_token=init_token,
+        pad_token=pad_token,
+        min_frequency=50,
+    )
 
-    # a = StagedActsDatasetProcessor(
-    #     sa, [TYPE, SUBTYPE, LVL, RESPGROUP], max_len=6, train=True, shuffle=True
-    # )
+    RESPGROUP = TTFieldWrapper(
+        min_frequency=7,
+        sequential=False,
+        unk_token="<unk>",
+        lower=True,
+        eos_token=eos_token,
+        init_token=init_token,
+        pad_token=pad_token,
+    )
+
+    sadp = StagedActsDatasetProcessor([TYPE, SUBTYPE, LVL, RESPGROUP], max_len=6)
+    sadp.process_dataset_to_tokens(tr, True, "field_sequence")
+    sadp.process_dataset_to_tokens(ts, False, "field_sequence")
+    sadp.process_dataset_to_tokens(v, False, "field_sequence")
+    print(v.data)

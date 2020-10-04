@@ -57,9 +57,7 @@ sequence_length = (
     5  # maximum number of independent category groups that make up a sequence
 )
 
-sa = StagedActsDataset(
-    "staged_activities.csv", [Textify(feature_cols)]
-)  # TODO should implement a train test split tracking here
+sa = StagedActsDataset.from_csv("staged_activities.csv", [Textify(feature_cols)])  # TODO should implement a train test split tracking here
 
 trn_sadp = StagedActsDatasetProcessor(
     sa,

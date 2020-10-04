@@ -1,11 +1,12 @@
 """example code of how we might tokenize individual categorial variables"""
 
-import torchtext
-import torch
-import numpy as np
-from utils import set_seed
 import logging
-from utils import get_field_term_weights
+
+import numpy as np
+import torch
+import torchtext
+
+from utils import get_field_term_weights, set_seed
 
 set_seed(0)
 logger = logging.getLogger(__name__)
@@ -17,7 +18,6 @@ eos_token = "<eos>"
 init_token = "<sos>"
 pad_token = "<pad>"
 
-from typing import List
 from torch import Tensor
 
 
