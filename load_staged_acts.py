@@ -12,7 +12,7 @@ staged_activity_fields = [
     "SA_WRK_TYPE",
     "SA_SUB_TYPE",
     "SA_CAP_LVL",
-    "SA_WRK_RESP_ORG_UNIT",
+    "SA_ASGN_GRP_NM",
 ]
 
 
@@ -28,8 +28,17 @@ feature_cols = [
     "LI_FAIL_CD",
     "CAP_CLASS",
     "RESPONSIBLE_GROUP",
+    "TITLE",
+    "LI_SYS_ID",
+    "LI_NAME",
+    "PLNT_UNIT",
+    "LI_EQUIP_COMP_CD",
+    "LI_EQUIP",
+    "IDENT_PER_ORG_UNIT",
     "DESCR",
     "LEADER_COMMENT",
+    "ACTION_TAKEN_TEXT",
+    "SUG_DISP",
 ]
 
 
@@ -78,7 +87,7 @@ def prep_feature_data(csv_path: str, feature_cols: List) -> pd.DataFrame:
 
 def get_dat_data(split_frac: float, feature_cols: List):
     """ get data from the csv, extract columns and split into test/train"""
-    cr_data = prep_feature_data("staged_activities.csv", feature_cols)
+    cr_data = prep_feature_data("data/stg_acts.csv", feature_cols)
 
     tst_data = cr_data[
         cr_data.CR_CD.isin(cr_data.sample(frac=1.0 - split_frac, random_state=1).CR_CD)

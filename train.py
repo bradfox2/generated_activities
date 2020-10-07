@@ -17,15 +17,15 @@ from data_processing import (
     batchify_static_data,
     process,
 )
-from load_staged_acts import get_dat_data
+from load_staged_acts import get_dat_data, feature_cols
 from model import IndependentCategorical, SAModel
 from utils import field_accuracy, field_printer, set_seed
 
 set_seed(0)
 
-load_chkpnt = True
+load_chkpnt = False
 
-model_name = "SIAG4"  # Seq_Ind_Acts_Generation
+model_name = "SIAG4_grp_name"  # Seq_Ind_Acts_Generation
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -38,7 +38,9 @@ logger.addHandler(fh)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-trnseq, tstseq, trnstat, tststat = get_dat_data(split_frac=0.8)
+trnseq, tstseq, trnstat, tststat = get_dat_data(
+    split_frac=0.8, feature_cols=feature_cols
+)
 
 sequence_length = (
     5  # maximum number of independent category groups that make up a sequence
